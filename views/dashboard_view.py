@@ -70,7 +70,8 @@ class DashboardView(ctk.CTkFrame):
         xp_info = self.db.get_xp_info(uid)
         streak_info = self.db.get_streak(uid)
 
-        xp_card = ctk.CTkFrame(self.scroll, corner_radius=14, fg_color=t["card"])
+        xp_card = ctk.CTkFrame(
+            self.scroll, corner_radius=14, fg_color=t["card"])
         xp_card.pack(fill="x", pady=8)
 
         xp_inner = ctk.CTkFrame(xp_card, fg_color="transparent")
@@ -132,7 +133,8 @@ class DashboardView(ctk.CTkFrame):
 
         for goal in goals:
             gtype = goal["goal_type"]
-            config = goal_configs.get(gtype, ("📌", gtype, goal["current_value"]))
+            config = goal_configs.get(
+                gtype, ("📌", gtype, goal["current_value"]))
             emoji, label, current = config
 
             # Atualizar valor real
@@ -141,7 +143,8 @@ class DashboardView(ctk.CTkFrame):
             done = current >= target
             pct = min(current / target, 1.0) if target > 0 else 0
 
-            card = ctk.CTkFrame(goals_frame, corner_radius=12, fg_color=t["card"])
+            card = ctk.CTkFrame(
+                goals_frame, corner_radius=12, fg_color=t["card"])
             card.pack(fill="x", pady=3)
             inner = ctk.CTkFrame(card, fg_color="transparent")
             inner.pack(fill="x", padx=15, pady=12)

@@ -14,7 +14,8 @@ class FlashcardsView(ctk.CTkFrame):
         self._cards = []
         self._card_index = 0
         self._showing_back = False
-        self._review_results = {"total": 0, "easy": 0, "medium": 0, "hard": 0, "forgot": 0}
+        self._review_results = {"total": 0, "easy": 0,
+                                "medium": 0, "hard": 0, "forgot": 0}
 
         self._build()
 
@@ -29,7 +30,8 @@ class FlashcardsView(ctk.CTkFrame):
         self.title_lb.grid(row=0, column=0, pady=(20, 10), padx=25, sticky="w")
 
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
-        self.content_frame.grid(row=1, column=0, sticky="nswe", padx=25, pady=(0, 20))
+        self.content_frame.grid(
+            row=1, column=0, sticky="nswe", padx=25, pady=(0, 20))
         self.content_frame.grid_columnconfigure(0, weight=1)
         self.content_frame.grid_rowconfigure(0, weight=1)
 
@@ -46,7 +48,8 @@ class FlashcardsView(ctk.CTkFrame):
         t = self.app.theme_mgr.get_theme()
         uid = self.app.get_user_id()
 
-        scroll = ctk.CTkScrollableFrame(self.content_frame, fg_color="transparent")
+        scroll = ctk.CTkScrollableFrame(
+            self.content_frame, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
         scroll.grid_columnconfigure(0, weight=1)
 
@@ -130,12 +133,14 @@ class FlashcardsView(ctk.CTkFrame):
             row_frame = None
             for i, subj in enumerate(subjects):
                 if i % 3 == 0:
-                    row_frame = ctk.CTkFrame(subjects_frame, fg_color="transparent")
+                    row_frame = ctk.CTkFrame(
+                        subjects_frame, fg_color="transparent")
                     row_frame.pack(fill="x", pady=3)
 
                 cards = self.db.get_flashcards(uid, subject=subj)
 
-                card = ctk.CTkFrame(row_frame, corner_radius=10, fg_color=t["card"])
+                card = ctk.CTkFrame(
+                    row_frame, corner_radius=10, fg_color=t["card"])
                 card.pack(side="left", fill="x", expand=True, padx=3)
 
                 inner = ctk.CTkFrame(card, fg_color="transparent")
@@ -167,23 +172,27 @@ class FlashcardsView(ctk.CTkFrame):
         uid = self.app.get_user_id()
         self._cards = self.db.get_flashcards_for_review(uid, limit=20)
         if not self._cards:
-            CTkMessagebox(title="Info", message="Nenhum flashcard para revisar agora!", icon="check")
+            CTkMessagebox(
+                title="Info", message="Nenhum flashcard para revisar agora!", icon="check")
             return
         self._card_index = 0
         self._showing_back = False
-        self._review_results = {"total": 0, "easy": 0, "medium": 0, "hard": 0, "forgot": 0}
+        self._review_results = {"total": 0, "easy": 0,
+                                "medium": 0, "hard": 0, "forgot": 0}
         self._show_review_card()
 
     def _start_review_subject(self, subject):
         uid = self.app.get_user_id()
         cards = self.db.get_flashcards(uid, subject=subject)
         if not cards:
-            CTkMessagebox(title="Info", message="Nenhum flashcard nesta matéria!", icon="warning")
+            CTkMessagebox(
+                title="Info", message="Nenhum flashcard nesta matéria!", icon="warning")
             return
         self._cards = cards
         self._card_index = 0
         self._showing_back = False
-        self._review_results = {"total": 0, "easy": 0, "medium": 0, "hard": 0, "forgot": 0}
+        self._review_results = {"total": 0, "easy": 0,
+                                "medium": 0, "hard": 0, "forgot": 0}
         self._show_review_card()
 
     def _show_review_card(self):
@@ -214,7 +223,8 @@ class FlashcardsView(ctk.CTkFrame):
             text_color=t["text_sec"],
         ).pack(side="right")
 
-        progress = ctk.CTkProgressBar(self.content_frame, height=6, corner_radius=3)
+        progress = ctk.CTkProgressBar(
+            self.content_frame, height=6, corner_radius=3)
         progress.set(self._card_index / len(self._cards))
         progress.configure(progress_color=t["accent"], fg_color=t["secondary"])
         progress.pack(fill="x", pady=(0, 15))
@@ -279,7 +289,8 @@ class FlashcardsView(ctk.CTkFrame):
 
         # Botões de avaliação (só no verso)
         if self._showing_back:
-            eval_frame = ctk.CTkFrame(self.content_frame, fg_color="transparent")
+            eval_frame = ctk.CTkFrame(
+                self.content_frame, fg_color="transparent")
             eval_frame.pack(fill="x", padx=40, pady=15)
 
             ctk.CTkLabel(
@@ -346,7 +357,8 @@ class FlashcardsView(ctk.CTkFrame):
         self._clear_content()
         t = self.app.theme_mgr.get_theme()
 
-        results_card = ctk.CTkFrame(self.content_frame, corner_radius=16, fg_color=t["card"])
+        results_card = ctk.CTkFrame(
+            self.content_frame, corner_radius=16, fg_color=t["card"])
         results_card.pack(fill="x", pady=30, padx=40)
 
         ctk.CTkLabel(
@@ -412,7 +424,8 @@ class FlashcardsView(ctk.CTkFrame):
         self._clear_content()
         t = self.app.theme_mgr.get_theme()
 
-        card = ctk.CTkFrame(self.content_frame, corner_radius=16, fg_color=t["card"])
+        card = ctk.CTkFrame(self.content_frame,
+                            corner_radius=16, fg_color=t["card"])
         card.pack(fill="x", pady=20, padx=40)
 
         ctk.CTkLabel(
@@ -491,18 +504,21 @@ class FlashcardsView(ctk.CTkFrame):
         diff = self._create_diff.get()
 
         if not subject or not front or not back:
-            CTkMessagebox(title="Atenção", message="Preencha a matéria, pergunta e resposta.", icon="warning")
+            CTkMessagebox(
+                title="Atenção", message="Preencha a matéria, pergunta e resposta.", icon="warning")
             return
 
         uid = self.app.get_user_id()
-        self.db.create_flashcard(front, back, subject, topic, difficulty=diff, user_id=uid)
+        self.db.create_flashcard(front, back, subject,
+                                 topic, difficulty=diff, user_id=uid)
 
         # XP por criar flashcard
         if uid:
             self.db.add_xp(uid, 5, "flashcard_create", "Flashcard criado")
             self.db.check_and_grant_achievements(uid)
 
-        CTkMessagebox(title="Sucesso", message="Flashcard criado com sucesso! 🃏", icon="check")
+        CTkMessagebox(title="Sucesso",
+                      message="Flashcard criado com sucesso! 🃏", icon="check")
         self._show_menu()
 
     # ══════════════════════════════════════════════════════════
@@ -513,7 +529,8 @@ class FlashcardsView(ctk.CTkFrame):
         t = self.app.theme_mgr.get_theme()
         uid = self.app.get_user_id()
 
-        scroll = ctk.CTkScrollableFrame(self.content_frame, fg_color="transparent")
+        scroll = ctk.CTkScrollableFrame(
+            self.content_frame, fg_color="transparent")
         scroll.pack(fill="both", expand=True)
 
         header = ctk.CTkFrame(scroll, fg_color="transparent")
@@ -557,7 +574,8 @@ class FlashcardsView(ctk.CTkFrame):
             ).pack(anchor="w", pady=(15, 5))
 
             for card_data in subj_cards:
-                card = ctk.CTkFrame(scroll, corner_radius=10, fg_color=t["card"])
+                card = ctk.CTkFrame(
+                    scroll, corner_radius=10, fg_color=t["card"])
                 card.pack(fill="x", pady=3)
                 inner = ctk.CTkFrame(card, fg_color="transparent")
                 inner.pack(fill="x", padx=15, pady=10)
@@ -586,7 +604,8 @@ class FlashcardsView(ctk.CTkFrame):
                     ctk.CTkButton(
                         inner, text="🗑️", width=34, height=34,
                         fg_color="transparent", hover_color=t["danger"],
-                        command=lambda fid=card_data["id"]: self._delete_card(fid),
+                        command=lambda fid=card_data["id"]: self._delete_card(
+                            fid),
                     ).grid(row=0, column=1, rowspan=2, sticky="e")
 
     def _delete_card(self, flashcard_id):

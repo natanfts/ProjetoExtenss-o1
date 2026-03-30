@@ -4,6 +4,8 @@ import json
 import os
 from datetime import datetime
 
+from enem_content import EXPANDED_QUESTIONS, EXPANDED_FLASHCARDS
+
 
 class DatabaseManager:
     def __init__(self, db_path=None):
@@ -261,6 +263,9 @@ class DatabaseManager:
         if c.fetchone()[0] == 0:
             self._seed_flashcards(conn)
 
+        # Seed de conteúdo expandido ENEM (migração segura)
+        self._seed_expanded_content(conn)
+
         conn.close()
 
     # ── migração gamificação ─────────────────────────────────
@@ -287,35 +292,58 @@ class DatabaseManager:
     def _seed_achievements(self, conn):
         achievements = [
             # Pomodoro
-            ("first_pomodoro", "Primeiro Pomodoro!", "Complete sua primeira sessão de foco", "🍅", 25, "pomodoro", "pomodoros_completed", 1),
-            ("pomodoro_10", "Focado", "Complete 10 sessões de foco", "🔥", 50, "pomodoro", "pomodoros_completed", 10),
-            ("pomodoro_50", "Mestre do Foco", "Complete 50 sessões de foco", "🧘", 150, "pomodoro", "pomodoros_completed", 50),
-            ("pomodoro_100", "Lenda do Pomodoro", "Complete 100 sessões de foco", "💎", 300, "pomodoro", "pomodoros_completed", 100),
-            ("pomodoro_marathon", "Maratonista", "Complete 8 pomodoros em um dia", "🏃", 100, "pomodoro", "daily_pomodoros", 8),
+            ("first_pomodoro", "Primeiro Pomodoro!", "Complete sua primeira sessão de foco",
+             "🍅", 25, "pomodoro", "pomodoros_completed", 1),
+            ("pomodoro_10", "Focado", "Complete 10 sessões de foco",
+             "🔥", 50, "pomodoro", "pomodoros_completed", 10),
+            ("pomodoro_50", "Mestre do Foco", "Complete 50 sessões de foco",
+             "🧘", 150, "pomodoro", "pomodoros_completed", 50),
+            ("pomodoro_100", "Lenda do Pomodoro", "Complete 100 sessões de foco",
+             "💎", 300, "pomodoro", "pomodoros_completed", 100),
+            ("pomodoro_marathon", "Maratonista", "Complete 8 pomodoros em um dia",
+             "🏃", 100, "pomodoro", "daily_pomodoros", 8),
             # Quiz
-            ("first_quiz", "Primeira Questão!", "Responda sua primeira questão", "📝", 15, "quiz", "quizzes_completed", 1),
-            ("quiz_50", "Estudioso", "Responda 50 questões", "📚", 75, "quiz", "quizzes_completed", 50),
-            ("quiz_200", "Enciclopédia", "Responda 200 questões", "🎓", 200, "quiz", "quizzes_completed", 200),
-            ("perfect_quiz", "Nota Máxima!", "Acerte 100% em um quiz", "⭐", 100, "quiz", "perfect_score", 1),
-            ("enem_warrior", "Guerreiro do ENEM", "Complete 5 simulados ENEM", "🎯", 150, "quiz", "enem_quizzes", 5),
+            ("first_quiz", "Primeira Questão!", "Responda sua primeira questão",
+             "📝", 15, "quiz", "quizzes_completed", 1),
+            ("quiz_50", "Estudioso", "Responda 50 questões",
+             "📚", 75, "quiz", "quizzes_completed", 50),
+            ("quiz_200", "Enciclopédia", "Responda 200 questões",
+             "🎓", 200, "quiz", "quizzes_completed", 200),
+            ("perfect_quiz", "Nota Máxima!", "Acerte 100% em um quiz",
+             "⭐", 100, "quiz", "perfect_score", 1),
+            ("enem_warrior", "Guerreiro do ENEM", "Complete 5 simulados ENEM",
+             "🎯", 150, "quiz", "enem_quizzes", 5),
             # Streak
-            ("streak_3", "Consistente", "Estude 3 dias seguidos", "📅", 50, "streak", "streak_days", 3),
-            ("streak_7", "Semana Perfeita", "Estude 7 dias seguidos", "🌟", 150, "streak", "streak_days", 7),
-            ("streak_30", "Mês de Ouro", "Estude 30 dias seguidos", "👑", 500, "streak", "streak_days", 30),
+            ("streak_3", "Consistente", "Estude 3 dias seguidos",
+             "📅", 50, "streak", "streak_days", 3),
+            ("streak_7", "Semana Perfeita", "Estude 7 dias seguidos",
+             "🌟", 150, "streak", "streak_days", 7),
+            ("streak_30", "Mês de Ouro", "Estude 30 dias seguidos",
+             "👑", 500, "streak", "streak_days", 30),
             # Flashcards
-            ("first_flashcard", "Primeiro Flashcard!", "Crie seu primeiro flashcard", "🃏", 15, "flashcard", "flashcards_created", 1),
-            ("flashcard_master", "Memória de Elefante", "Revise 100 flashcards", "🧠", 100, "flashcard", "flashcards_reviewed", 100),
+            ("first_flashcard", "Primeiro Flashcard!", "Crie seu primeiro flashcard",
+             "🃏", 15, "flashcard", "flashcards_created", 1),
+            ("flashcard_master", "Memória de Elefante", "Revise 100 flashcards",
+             "🧠", 100, "flashcard", "flashcards_reviewed", 100),
             # Tarefas
-            ("first_task", "Organizado", "Complete sua primeira tarefa", "✅", 20, "task", "tasks_completed", 1),
-            ("task_25", "Produtivo", "Complete 25 tarefas", "🚀", 100, "task", "tasks_completed", 25),
+            ("first_task", "Organizado", "Complete sua primeira tarefa",
+             "✅", 20, "task", "tasks_completed", 1),
+            ("task_25", "Produtivo", "Complete 25 tarefas",
+             "🚀", 100, "task", "tasks_completed", 25),
             # Níveis
-            ("level_5", "Estudante Dedicado", "Alcance o nível 5", "🎖️", 0, "level", "level_reached", 5),
-            ("level_10", "Veterano", "Alcance o nível 10", "🏅", 0, "level", "level_reached", 10),
-            ("level_25", "Mestre dos Estudos", "Alcance o nível 25", "🏆", 0, "level", "level_reached", 25),
+            ("level_5", "Estudante Dedicado", "Alcance o nível 5",
+             "🎖️", 0, "level", "level_reached", 5),
+            ("level_10", "Veterano", "Alcance o nível 10",
+             "🏅", 0, "level", "level_reached", 10),
+            ("level_25", "Mestre dos Estudos", "Alcance o nível 25",
+             "🏆", 0, "level", "level_reached", 25),
             # Horas
-            ("hours_5", "5 Horas de Estudo", "Acumule 5 horas de foco", "⏰", 75, "hours", "focus_hours", 5),
-            ("hours_25", "25 Horas de Estudo", "Acumule 25 horas de foco", "⌛", 200, "hours", "focus_hours", 25),
-            ("hours_100", "100 Horas de Estudo", "Acumule 100 horas de foco", "⏳", 500, "hours", "focus_hours", 100),
+            ("hours_5", "5 Horas de Estudo", "Acumule 5 horas de foco",
+             "⏰", 75, "hours", "focus_hours", 5),
+            ("hours_25", "25 Horas de Estudo", "Acumule 25 horas de foco",
+             "⌛", 200, "hours", "focus_hours", 25),
+            ("hours_100", "100 Horas de Estudo", "Acumule 100 horas de foco",
+             "⏳", 500, "hours", "focus_hours", 100),
         ]
         for a in achievements:
             conn.execute(
@@ -329,34 +357,56 @@ class DatabaseManager:
     def _seed_flashcards(self, conn):
         cards = [
             # Matemática
-            ("enem", "Matemática", "Fórmulas", "Área do triângulo", "(base × altura) / 2", "fácil"),
-            ("enem", "Matemática", "Fórmulas", "Área do círculo", "π × r²", "fácil"),
-            ("enem", "Matemática", "Fórmulas", "Teorema de Pitágoras", "a² = b² + c² (hipotenusa² = cateto² + cateto²)", "fácil"),
-            ("enem", "Matemática", "Fórmulas", "Fórmula de Bhaskara", "x = (-b ± √Δ) / 2a, onde Δ = b² - 4ac", "médio"),
-            ("enem", "Matemática", "Fórmulas", "Volume da esfera", "(4/3) × π × r³", "médio"),
-            ("enem", "Matemática", "Fórmulas", "Progressão Aritmética (termo geral)", "aₙ = a₁ + (n-1) × r", "médio"),
-            ("enem", "Matemática", "Fórmulas", "Juros compostos", "M = C × (1 + i)ⁿ", "difícil"),
+            ("enem", "Matemática", "Fórmulas",
+             "Área do triângulo", "(base × altura) / 2", "fácil"),
+            ("enem", "Matemática", "Fórmulas",
+             "Área do círculo", "π × r²", "fácil"),
+            ("enem", "Matemática", "Fórmulas", "Teorema de Pitágoras",
+             "a² = b² + c² (hipotenusa² = cateto² + cateto²)", "fácil"),
+            ("enem", "Matemática", "Fórmulas", "Fórmula de Bhaskara",
+             "x = (-b ± √Δ) / 2a, onde Δ = b² - 4ac", "médio"),
+            ("enem", "Matemática", "Fórmulas",
+             "Volume da esfera", "(4/3) × π × r³", "médio"),
+            ("enem", "Matemática", "Fórmulas",
+             "Progressão Aritmética (termo geral)", "aₙ = a₁ + (n-1) × r", "médio"),
+            ("enem", "Matemática", "Fórmulas",
+             "Juros compostos", "M = C × (1 + i)ⁿ", "difícil"),
             # Física
-            ("enem", "Ciências da Natureza", "Física", "2ª Lei de Newton", "F = m × a (Força = massa × aceleração)", "fácil"),
-            ("enem", "Ciências da Natureza", "Física", "Velocidade média", "v = Δs / Δt (variação do espaço / variação do tempo)", "fácil"),
-            ("enem", "Ciências da Natureza", "Física", "Energia cinética", "Ec = (m × v²) / 2", "médio"),
-            ("enem", "Ciências da Natureza", "Física", "Lei de Ohm", "V = R × I (Tensão = Resistência × Corrente)", "médio"),
+            ("enem", "Ciências da Natureza", "Física", "2ª Lei de Newton",
+             "F = m × a (Força = massa × aceleração)", "fácil"),
+            ("enem", "Ciências da Natureza", "Física", "Velocidade média",
+             "v = Δs / Δt (variação do espaço / variação do tempo)", "fácil"),
+            ("enem", "Ciências da Natureza", "Física",
+             "Energia cinética", "Ec = (m × v²) / 2", "médio"),
+            ("enem", "Ciências da Natureza", "Física", "Lei de Ohm",
+             "V = R × I (Tensão = Resistência × Corrente)", "médio"),
             # Química
-            ("enem", "Ciências da Natureza", "Química", "O que é pH?", "Potencial hidrogeniônico. pH < 7 = ácido, pH = 7 = neutro, pH > 7 = básico", "fácil"),
-            ("enem", "Ciências da Natureza", "Química", "Lei de Lavoisier", "Na natureza nada se cria, nada se perde, tudo se transforma (conservação de massa)", "fácil"),
-            ("enem", "Ciências da Natureza", "Química", "Número de Avogadro", "6,022 × 10²³ (número de entidades em 1 mol)", "médio"),
+            ("enem", "Ciências da Natureza", "Química", "O que é pH?",
+             "Potencial hidrogeniônico. pH < 7 = ácido, pH = 7 = neutro, pH > 7 = básico", "fácil"),
+            ("enem", "Ciências da Natureza", "Química", "Lei de Lavoisier",
+             "Na natureza nada se cria, nada se perde, tudo se transforma (conservação de massa)", "fácil"),
+            ("enem", "Ciências da Natureza", "Química", "Número de Avogadro",
+             "6,022 × 10²³ (número de entidades em 1 mol)", "médio"),
             # Biologia
-            ("enem", "Ciências da Natureza", "Biologia", "Mitose vs Meiose", "Mitose: 2 células iguais (2n). Meiose: 4 células diferentes (n) - gametas", "médio"),
-            ("enem", "Ciências da Natureza", "Biologia", "Fotossíntese (equação)", "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂ (luz + clorofila)", "médio"),
+            ("enem", "Ciências da Natureza", "Biologia", "Mitose vs Meiose",
+             "Mitose: 2 células iguais (2n). Meiose: 4 células diferentes (n) - gametas", "médio"),
+            ("enem", "Ciências da Natureza", "Biologia", "Fotossíntese (equação)",
+             "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂ (luz + clorofila)", "médio"),
             # História
-            ("enem", "Ciências Humanas", "História", "Proclamação da República", "15 de novembro de 1889 — Marechal Deodoro da Fonseca", "fácil"),
-            ("enem", "Ciências Humanas", "História", "Independência do Brasil", "7 de setembro de 1822 — Dom Pedro I às margens do Ipiranga", "fácil"),
-            ("enem", "Ciências Humanas", "História", "Revolução Francesa", "1789 — Queda da Bastilha. Lema: Liberdade, Igualdade, Fraternidade", "médio"),
+            ("enem", "Ciências Humanas", "História", "Proclamação da República",
+             "15 de novembro de 1889 — Marechal Deodoro da Fonseca", "fácil"),
+            ("enem", "Ciências Humanas", "História", "Independência do Brasil",
+             "7 de setembro de 1822 — Dom Pedro I às margens do Ipiranga", "fácil"),
+            ("enem", "Ciências Humanas", "História", "Revolução Francesa",
+             "1789 — Queda da Bastilha. Lema: Liberdade, Igualdade, Fraternidade", "médio"),
             # Geografia
-            ("enem", "Ciências Humanas", "Geografia", "Camadas da Terra", "Crosta, Manto, Núcleo externo, Núcleo interno", "fácil"),
-            ("enem", "Ciências Humanas", "Geografia", "Biomas brasileiros", "Amazônia, Cerrado, Mata Atlântica, Caatinga, Pampa, Pantanal", "fácil"),
+            ("enem", "Ciências Humanas", "Geografia", "Camadas da Terra",
+             "Crosta, Manto, Núcleo externo, Núcleo interno", "fácil"),
+            ("enem", "Ciências Humanas", "Geografia", "Biomas brasileiros",
+             "Amazônia, Cerrado, Mata Atlântica, Caatinga, Pampa, Pantanal", "fácil"),
             # Português / Redação
-            ("enem", "Linguagens", "Gramática", "Tipos de 'porquê'", "Por que (pergunta), Porque (resposta), Por quê (fim de frase), Porquê (substantivo)", "médio"),
+            ("enem", "Linguagens", "Gramática", "Tipos de 'porquê'",
+             "Por que (pergunta), Porque (resposta), Por quê (fim de frase), Porquê (substantivo)", "médio"),
             ("enem", "Redação", "Competências", "5 competências da redação ENEM",
              "C1: Norma culpa\nC2: Compreensão do tema\nC3: Argumentação\nC4: Coesão\nC5: Proposta de intervenção", "médio"),
         ]
@@ -365,6 +415,69 @@ class DatabaseManager:
                 """INSERT INTO flashcards (category, subject, topic, front, back, difficulty)
                    VALUES (?,?,?,?,?,?)""", card
             )
+        conn.commit()
+
+    # ── Seed de conteúdo expandido ENEM ──────────────────────
+    def _seed_expanded_content(self, conn):
+        """
+        Adiciona questões e flashcards expandidos do ENEM.
+        Usa INSERT OR IGNORE para não duplicar conteúdo já existente.
+        Verifica por uma flag na tabela update_log para rodar só uma vez.
+        """
+        c = conn.cursor()
+
+        # Verificar se já rodou a expansão v2.1
+        row = c.execute(
+            "SELECT 1 FROM update_log WHERE update_type='content_expansion_v2.1' AND status='success'"
+        ).fetchone()
+        if row:
+            return  # já expandido
+
+        added_q = 0
+        added_f = 0
+
+        # ── Inserir questões expandidas ──────────────────────
+        for q in EXPANDED_QUESTIONS:
+            try:
+                # Verificar se questão já existe (por texto da pergunta)
+                existing = c.execute(
+                    "SELECT 1 FROM content WHERE question=? AND category=?",
+                    (q[3], q[0]),
+                ).fetchone()
+                if not existing:
+                    c.execute(
+                        """INSERT INTO content
+                           (category, subject, topic, question, options,
+                            correct_answer, explanation, difficulty, content_type)
+                           VALUES (?,?,?,?,?,?,?,?,'quiz')""", q
+                    )
+                    added_q += 1
+            except Exception:
+                continue
+
+        # ── Inserir flashcards expandidos ────────────────────
+        for f in EXPANDED_FLASHCARDS:
+            try:
+                existing = c.execute(
+                    "SELECT 1 FROM flashcards WHERE front=? AND category=? AND user_id IS NULL",
+                    (f[3], f[0]),
+                ).fetchone()
+                if not existing:
+                    c.execute(
+                        """INSERT INTO flashcards
+                           (category, subject, topic, front, back, difficulty)
+                           VALUES (?,?,?,?,?,?)""", f
+                    )
+                    added_f += 1
+            except Exception:
+                continue
+
+        # Registrar que a expansão foi feita
+        c.execute(
+            """INSERT INTO update_log (update_type, status, videos_updated, completed_at)
+               VALUES ('content_expansion_v2.1', 'success', ?, ?)""",
+            (added_q + added_f, datetime.now().isoformat()),
+        )
         conn.commit()
 
     # ── SEED de conteúdo ─────────────────────────────────────
@@ -1183,7 +1296,8 @@ class DatabaseManager:
             return {"new_xp": 0, "new_level": 1, "leveled_up": False, "achievements": []}
 
         conn = self._conn()
-        user = conn.execute("SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
+        user = conn.execute(
+            "SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
         if not user:
             conn.close()
             return {"new_xp": 0, "new_level": 1, "leveled_up": False, "achievements": []}
@@ -1196,7 +1310,8 @@ class DatabaseManager:
         while new_xp >= self.xp_for_level(new_level + 1):
             new_level += 1
 
-        conn.execute("UPDATE users SET xp=?, level=? WHERE id=?", (new_xp, new_level, user_id))
+        conn.execute("UPDATE users SET xp=?, level=? WHERE id=?",
+                     (new_xp, new_level, user_id))
         conn.execute(
             "INSERT INTO xp_log (user_id, amount, source, description) VALUES (?,?,?,?)",
             (user_id, amount, source, description),
@@ -1207,7 +1322,8 @@ class DatabaseManager:
         # Verificar conquistas de nível
         new_achievements = []
         if new_level > old_level:
-            level_achievements = self._check_level_achievements(user_id, new_level)
+            level_achievements = self._check_level_achievements(
+                user_id, new_level)
             new_achievements.extend(level_achievements)
 
         return {
@@ -1222,7 +1338,8 @@ class DatabaseManager:
         if not user_id:
             return {"xp": 0, "level": 1, "xp_current_level": 0, "xp_next_level": 120, "progress": 0.0}
         conn = self._conn()
-        user = conn.execute("SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
+        user = conn.execute(
+            "SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
         conn.close()
         if not user:
             return {"xp": 0, "level": 1, "xp_current_level": 0, "xp_next_level": 120, "progress": 0.0}
@@ -1231,7 +1348,8 @@ class DatabaseManager:
         level = user["level"] or 1
         xp_this = self.xp_for_level(level)
         xp_next = self.xp_for_level(level + 1)
-        progress = (xp - xp_this) / (xp_next - xp_this) if (xp_next - xp_this) > 0 else 0.0
+        progress = (xp - xp_this) / (xp_next -
+                                     xp_this) if (xp_next - xp_this) > 0 else 0.0
         return {
             "xp": xp, "level": level,
             "xp_current_level": xp_this, "xp_next_level": xp_next,
@@ -1316,7 +1434,8 @@ class DatabaseManager:
     # ── Conquistas ───────────────────────────────────────────
     def get_all_achievements(self) -> list[dict]:
         conn = self._conn()
-        rows = conn.execute("SELECT * FROM achievements ORDER BY category, requirement_value").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM achievements ORDER BY category, requirement_value").fetchall()
         conn.close()
         return [dict(r) for r in rows]
 
@@ -1340,7 +1459,8 @@ class DatabaseManager:
         if not user_id:
             return None
         conn = self._conn()
-        ach = conn.execute("SELECT * FROM achievements WHERE key=?", (achievement_key,)).fetchone()
+        ach = conn.execute(
+            "SELECT * FROM achievements WHERE key=?", (achievement_key,)).fetchone()
         if not ach:
             conn.close()
             return None
@@ -1352,7 +1472,8 @@ class DatabaseManager:
             conn.commit()
             # Dar XP da conquista
             if ach["xp_reward"] > 0:
-                self.add_xp(user_id, ach["xp_reward"], "achievement", f"Conquista: {ach['title']}")
+                self.add_xp(user_id, ach["xp_reward"],
+                            "achievement", f"Conquista: {ach['title']}")
             conn.close()
             return dict(ach)
         except Exception:
@@ -1574,9 +1695,11 @@ class DatabaseManager:
             reps = 0
             interval = 1
 
-        easiness = max(1.3, easiness + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
+        easiness = max(1.3, easiness + 0.1 - (5 - quality)
+                       * (0.08 + (5 - quality) * 0.02))
 
-        next_review = (datetime.now() + __import__('datetime').timedelta(days=interval)).isoformat()
+        next_review = (
+            datetime.now() + __import__('datetime').timedelta(days=interval)).isoformat()
 
         conn.execute(
             """INSERT INTO flashcard_reviews
@@ -1590,7 +1713,8 @@ class DatabaseManager:
 
     def delete_flashcard(self, flashcard_id: int):
         conn = self._conn()
-        conn.execute("DELETE FROM flashcard_reviews WHERE flashcard_id=?", (flashcard_id,))
+        conn.execute(
+            "DELETE FROM flashcard_reviews WHERE flashcard_id=?", (flashcard_id,))
         conn.execute("DELETE FROM flashcards WHERE id=?", (flashcard_id,))
         conn.commit()
         conn.close()
@@ -1647,7 +1771,8 @@ class DatabaseManager:
         ).fetchall()
 
         if not goals:
-            user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            user = conn.execute(
+                "SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
             default_goals = [
                 ("pomodoro", user["daily_pomodoro_goal"] if user else 4),
                 ("xp", user["daily_xp_goal"] if user else 100),

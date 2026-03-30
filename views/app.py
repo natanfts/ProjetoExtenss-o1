@@ -67,7 +67,8 @@ class App(ctk.CTk):
             ("pomodoro",  "🍅  Pomodoro"),
             ("tasks",     "📋  Tarefas"),
             ("study",     "📚  Estudar"),
-            ("flashcards","🃏  Flashcards"),
+            ("flashcards", "🃏  Flashcards"),
+            ("shorts",    "📱  Shorts"),
             ("history",   "📊  Histórico"),
             ("settings",  "⚙️  Configurações"),
         ]
@@ -116,6 +117,7 @@ class App(ctk.CTk):
         from views.settings_view import SettingsView
         from views.dashboard_view import DashboardView
         from views.flashcards_view import FlashcardsView
+        from views.shorts_view import ShortsView
 
         for ViewClass, key in [
             (DashboardView, "dashboard"),
@@ -123,6 +125,7 @@ class App(ctk.CTk):
             (TasksView, "tasks"),
             (StudyView, "study"),
             (FlashcardsView, "flashcards"),
+            (ShortsView, "shorts"),
             (HistoryView, "history"),
             (SettingsView, "settings"),
             (LoginView, "login"),

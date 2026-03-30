@@ -13,6 +13,7 @@ from datetime import datetime
 
 from api_service import APIService
 from database import DatabaseManager
+from enem_content import EXPANDED_SEARCH_QUERIES
 
 logger = logging.getLogger("ContentUpdater")
 
@@ -96,6 +97,9 @@ SEARCH_QUERIES = {
         "princípios fundamentais direito constitucional concursos aula",
     ("concursos", "Atualidades", "Brasil"):
         "atualidades Brasil concursos aula",
+
+    # ── ENEM Expandido (novos tópicos) ────────────────────
+    **EXPANDED_SEARCH_QUERIES,
 }
 
 

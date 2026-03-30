@@ -185,7 +185,8 @@ class PomodoroView(ctk.CTkFrame):
             # Gamificação: XP + metas
             uid = self.app.get_user_id()
             if uid:
-                self.db.add_xp(uid, 25, "pomodoro", f"Pomodoro de {duration} min")
+                self.db.add_xp(uid, 25, "pomodoro",
+                               f"Pomodoro de {duration} min")
                 self.db.update_streak(uid)
                 self.db.update_daily_goal_progress(uid, "pomodoro")
                 self.db.update_daily_goal_progress(uid, "xp", 25)

@@ -653,7 +653,8 @@ class StudyView(ctk.CTkFrame):
         uid = self.app.get_user_id()
         if uid:
             xp_earned = self._enem_correct * 10 + total * 2
-            self.db.add_xp(uid, xp_earned, "enem_quiz", f"ENEM {self._enem_year}: {self._enem_correct}/{total}")
+            self.db.add_xp(uid, xp_earned, "enem_quiz",
+                           f"ENEM {self._enem_year}: {self._enem_correct}/{total}")
             self.db.update_daily_goal_progress(uid, "quiz", total)
             self.db.update_daily_goal_progress(uid, "xp", xp_earned)
             self.db.update_streak(uid)
@@ -1052,7 +1053,8 @@ class StudyView(ctk.CTkFrame):
         uid = self.app.get_user_id()
         if uid:
             xp_earned = self._correct * 8 + total * 2
-            self.db.add_xp(uid, xp_earned, "quiz", f"{self._subject}: {self._correct}/{total}")
+            self.db.add_xp(uid, xp_earned, "quiz",
+                           f"{self._subject}: {self._correct}/{total}")
             self.db.update_daily_goal_progress(uid, "quiz", total)
             self.db.update_daily_goal_progress(uid, "xp", xp_earned)
             self.db.update_streak(uid)
