@@ -182,6 +182,15 @@ class PomodoroView(ctk.CTkFrame):
             self._sessions_done += 1
             if self._selected_task:
                 self.db.increment_task_pomodoro(self._selected_task["id"])
+            # Gamificação: XP + metas
+            uid = self.app.get_user_id()
+            if uid:
+                self.db.add_xp(uid, 25, "pomodoro", f"Pomodoro de {duration} min")
+                self.db.update_streak(uid)
+                self.db.update_daily_goal_progress(uid, "pomodoro")
+                self.db.update_daily_goal_progress(uid, "xp", 25)
+                self.db.check_and_grant_achievements(uid)
+                self.app.refresh_xp_sidebar()
 
         # Notificação sonora em thread separada
         threading.Thread(target=lambda: winsound.Beep(

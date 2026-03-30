@@ -649,6 +649,17 @@ class StudyView(ctk.CTkFrame):
             self.app.get_user_id(),
         )
 
+        # Gamificação: XP + metas
+        uid = self.app.get_user_id()
+        if uid:
+            xp_earned = self._enem_correct * 10 + total * 2
+            self.db.add_xp(uid, xp_earned, "enem_quiz", f"ENEM {self._enem_year}: {self._enem_correct}/{total}")
+            self.db.update_daily_goal_progress(uid, "quiz", total)
+            self.db.update_daily_goal_progress(uid, "xp", xp_earned)
+            self.db.update_streak(uid)
+            self.db.check_and_grant_achievements(uid)
+            self.app.refresh_xp_sidebar()
+
         # Resultado
         ctk.CTkLabel(
             self._enem_feedback_frame,
@@ -1036,6 +1047,17 @@ class StudyView(ctk.CTkFrame):
             self._subject, "", "quiz", score, total, self._correct,
             cat, self.app.get_user_id(),
         )
+
+        # Gamificação: XP + metas
+        uid = self.app.get_user_id()
+        if uid:
+            xp_earned = self._correct * 8 + total * 2
+            self.db.add_xp(uid, xp_earned, "quiz", f"{self._subject}: {self._correct}/{total}")
+            self.db.update_daily_goal_progress(uid, "quiz", total)
+            self.db.update_daily_goal_progress(uid, "xp", xp_earned)
+            self.db.update_streak(uid)
+            self.db.check_and_grant_achievements(uid)
+            self.app.refresh_xp_sidebar()
 
         ctk.CTkLabel(
             self._feedback_frame,

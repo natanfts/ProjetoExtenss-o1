@@ -140,6 +140,47 @@ class SettingsView(ctk.CTkFrame):
             command=self._save_pomodoro_settings,
         ).pack(pady=(10, 18))
 
+        # ── Metas Diárias ────────────────────────────────────
+        ctk.CTkLabel(
+            self.scroll, text="🎯 Metas Diárias",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=t["primary"],
+        ).pack(anchor="w", pady=(25, 12))
+
+        goals_card = ctk.CTkFrame(
+            self.scroll, corner_radius=12, fg_color=t["card"])
+        goals_card.pack(fill="x", pady=5)
+
+        user = self.app.current_user
+        pom_goal = user.get("daily_pomodoro_goal", 4) if user else 4
+        xp_goal = user.get("daily_xp_goal", 100) if user else 100
+        quiz_goal = user.get("daily_quiz_goal", 10) if user else 10
+
+        self._goal_entries = {}
+        for label, key, val in [
+            ("🍅 Pomodoros por dia:", "pomodoro", pom_goal),
+            ("⚡ XP por dia:", "xp", xp_goal),
+            ("📝 Questões por dia:", "quiz", quiz_goal),
+        ]:
+            row = ctk.CTkFrame(goals_card, fg_color="transparent")
+            row.pack(fill="x", padx=20, pady=8)
+            ctk.CTkLabel(row, text=label, font=ctk.CTkFont(size=14),
+                         text_color=t["text"]).pack(side="left")
+            entry = ctk.CTkEntry(row, width=80, height=36,
+                                 fg_color=t["entry_bg"], border_color=t["entry_border"],
+                                 text_color=t["text"])
+            entry.insert(0, str(val))
+            entry.pack(side="right")
+            self._goal_entries[key] = entry
+
+        ctk.CTkButton(
+            goals_card, text="💾 Salvar Metas Diárias",
+            width=300, height=38,
+            fg_color=t["button"], hover_color=t["button_hover"],
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self._save_goals_settings,
+        ).pack(pady=(10, 18))
+
         # ── Sobre ────────────────────────────────────────────
         ctk.CTkLabel(
             self.scroll, text="ℹ️ Sobre o PomodoroStudy",
@@ -152,9 +193,11 @@ class SettingsView(ctk.CTkFrame):
         about_card.pack(fill="x", pady=5)
 
         about_text = (
-            "🍅 PomodoroStudy v1.0\n\n"
+            "🍅 PomodoroStudy v2.0\n\n"
             "Aplicativo de estudos com método Pomodoro integrado.\n"
             "Preparação para ENEM e Concursos com quizzes e videoaulas.\n"
+            "Sistema de gamificação com XP, níveis e conquistas!\n"
+            "Flashcards com repetição espaçada e metas diárias.\n"
             "Personalize com temas de seus animes e séries favoritos!\n\n"
             "Desenvolvido com Python + CustomTkinter + SQLite"
         )
@@ -352,6 +395,42 @@ class SettingsView(ctk.CTkFrame):
             CTkMessagebox(
                 title="Aviso",
                 message="Faça login para salvar as configurações permanentemente.\nAs alterações serão temporárias.",
+                icon="info",
+            )
+
+    def _save_goals_settings(self):
+        try:
+            pom = int(self._goal_entries["pomodoro"].get())
+            xp = int(self._goal_entries["xp"].get())
+            quiz = int(self._goal_entries["quiz"].get())
+        except ValueError:
+            CTkMessagebox(
+                title="Erro", message="Insira valores numéricos válidos.", icon="cancel")
+            return
+
+        if pom < 1 or xp < 1 or quiz < 1:
+            CTkMessagebox(
+                title="Erro", message="Os valores devem ser maiores que zero.", icon="cancel")
+            return
+
+        if self.app.current_user:
+            uid = self.app.current_user["id"]
+            conn = self.db._conn()
+            conn.execute(
+                "UPDATE users SET daily_pomodoro_goal=?, daily_xp_goal=?, daily_quiz_goal=? WHERE id=?",
+                (pom, xp, quiz, uid),
+            )
+            conn.commit()
+            conn.close()
+            self.app.current_user["daily_pomodoro_goal"] = pom
+            self.app.current_user["daily_xp_goal"] = xp
+            self.app.current_user["daily_quiz_goal"] = quiz
+            CTkMessagebox(
+                title="Salvo", message="Metas diárias salvas! 🎯", icon="check")
+        else:
+            CTkMessagebox(
+                title="Aviso",
+                message="Faça login para salvar as metas.",
                 icon="info",
             )
 

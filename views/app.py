@@ -27,7 +27,7 @@ class App(ctk.CTk):
         self._build_layout()
         self._register_views()
         self._apply_theme()
-        self.show_frame("pomodoro")
+        self.show_frame("dashboard")
 
         # Iniciar atualização automática de conteúdo em background
         self.after(2000, self._auto_update_content)
@@ -53,15 +53,23 @@ class App(ctk.CTk):
             self.sidebar, text="👤 Convidado",
             font=ctk.CTkFont(size=13),
         )
-        self.user_label.pack(pady=(0, 20))
+        self.user_label.pack(pady=(0, 5))
+
+        self.xp_sidebar_label = ctk.CTkLabel(
+            self.sidebar, text="",
+            font=ctk.CTkFont(size=11),
+        )
+        self.xp_sidebar_label.pack(pady=(0, 15))
 
         # Botões de navegação
         nav_items = [
-            ("pomodoro", "🍅  Pomodoro"),
-            ("tasks",    "📋  Tarefas"),
-            ("study",    "📚  Estudar"),
-            ("history",  "📊  Histórico"),
-            ("settings", "⚙️  Configurações"),
+            ("dashboard", "🏠  Dashboard"),
+            ("pomodoro",  "🍅  Pomodoro"),
+            ("tasks",     "📋  Tarefas"),
+            ("study",     "📚  Estudar"),
+            ("flashcards","🃏  Flashcards"),
+            ("history",   "📊  Histórico"),
+            ("settings",  "⚙️  Configurações"),
         ]
         for key, label in nav_items:
             btn = ctk.CTkButton(
@@ -106,11 +114,15 @@ class App(ctk.CTk):
         from views.study_view import StudyView
         from views.history_view import HistoryView
         from views.settings_view import SettingsView
+        from views.dashboard_view import DashboardView
+        from views.flashcards_view import FlashcardsView
 
         for ViewClass, key in [
+            (DashboardView, "dashboard"),
             (PomodoroView, "pomodoro"),
             (TasksView, "tasks"),
             (StudyView, "study"),
+            (FlashcardsView, "flashcards"),
             (HistoryView, "history"),
             (SettingsView, "settings"),
             (LoginView, "login"),
@@ -151,6 +163,7 @@ class App(ctk.CTk):
         self.content.configure(fg_color=t["bg"])
         self.logo_label.configure(text_color=t["primary"])
         self.user_label.configure(text_color=t["text_sec"])
+        self.xp_sidebar_label.configure(text_color=t["accent"])
 
         for btn in self._nav_buttons.values():
             btn.configure(
@@ -184,15 +197,34 @@ class App(ctk.CTk):
             if user_dict.get("theme"):
                 self.theme_mgr.set_theme(user_dict["theme"])
                 self.refresh_theme()
+            # Atualizar streak ao logar
+            self.db.update_streak(user_dict["id"])
+            # XP info na sidebar
+            xp_info = self.db.get_xp_info(user_dict["id"])
+            streak = self.db.get_streak(user_dict["id"])
+            self.xp_sidebar_label.configure(
+                text=f"⭐ Nv.{xp_info['level']}  •  🔥 {streak['streak']} dias"
+            )
         else:
             self.user_label.configure(text="👤 Convidado")
             self.login_btn.configure(text="🔑  Entrar / Cadastrar")
             self.login_btn.configure(command=lambda: self.show_frame("login"))
+            self.xp_sidebar_label.configure(text="")
 
     def logout(self):
         self.current_user = None
         self.set_user(None)
-        self.show_frame("pomodoro")
+        self.show_frame("dashboard")
+
+    def refresh_xp_sidebar(self):
+        """Atualiza indicador de XP/streak na sidebar."""
+        uid = self.get_user_id()
+        if uid:
+            xp_info = self.db.get_xp_info(uid)
+            streak = self.db.get_streak(uid)
+            self.xp_sidebar_label.configure(
+                text=f"⭐ Nv.{xp_info['level']}  •  🔥 {streak['streak']} dias"
+            )
 
     def get_user_id(self):
         return self.current_user["id"] if self.current_user else None

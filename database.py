@@ -156,13 +156,216 @@ class DatabaseManager:
             )
         """)
 
+        # ── Gamificação ──────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS achievements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT UNIQUE NOT NULL,
+                title TEXT NOT NULL,
+                description TEXT,
+                emoji TEXT DEFAULT '🏆',
+                xp_reward INTEGER DEFAULT 0,
+                category TEXT DEFAULT 'geral',
+                requirement_type TEXT,
+                requirement_value INTEGER DEFAULT 0
+            )
+        """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS user_achievements (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                achievement_id INTEGER,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (achievement_id) REFERENCES achievements(id),
+                UNIQUE(user_id, achievement_id)
+            )
+        """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS xp_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                amount INTEGER NOT NULL,
+                source TEXT NOT NULL,
+                description TEXT,
+                earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        # ── Flashcards ───────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS flashcards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                category TEXT DEFAULT 'enem',
+                subject TEXT NOT NULL,
+                topic TEXT,
+                front TEXT NOT NULL,
+                back TEXT NOT NULL,
+                difficulty TEXT DEFAULT 'médio',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            )
+        """)
+
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS flashcard_reviews (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                flashcard_id INTEGER NOT NULL,
+                quality INTEGER DEFAULT 0,
+                easiness REAL DEFAULT 2.5,
+                interval INTEGER DEFAULT 1,
+                repetitions INTEGER DEFAULT 0,
+                next_review TIMESTAMP,
+                reviewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                FOREIGN KEY (flashcard_id) REFERENCES flashcards(id)
+            )
+        """)
+
+        # ── Metas Diárias ────────────────────────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS daily_goals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                goal_type TEXT NOT NULL,
+                target_value INTEGER NOT NULL,
+                current_value INTEGER DEFAULT 0,
+                date TEXT NOT NULL,
+                completed INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, goal_type, date)
+            )
+        """)
+
         conn.commit()
+
+        # Migrar colunas extras em users (XP, streak, etc.)
+        self._migrate_users_gamification(conn)
+
+        # Seed de conquistas
+        c.execute("SELECT COUNT(*) FROM achievements")
+        if c.fetchone()[0] == 0:
+            self._seed_achievements(conn)
 
         c.execute("SELECT COUNT(*) FROM content")
         if c.fetchone()[0] == 0:
             self._seed_content(conn)
 
+        # Seed flashcards padrão
+        c.execute("SELECT COUNT(*) FROM flashcards WHERE user_id IS NULL")
+        if c.fetchone()[0] == 0:
+            self._seed_flashcards(conn)
+
         conn.close()
+
+    # ── migração gamificação ─────────────────────────────────
+    def _migrate_users_gamification(self, conn):
+        """Adiciona colunas de gamificação à tabela users se não existirem."""
+        c = conn.cursor()
+        cols = [r[1] for r in c.execute("PRAGMA table_info(users)").fetchall()]
+        migrations = [
+            ("xp", "INTEGER DEFAULT 0"),
+            ("level", "INTEGER DEFAULT 1"),
+            ("streak_days", "INTEGER DEFAULT 0"),
+            ("last_active_date", "TEXT"),
+            ("longest_streak", "INTEGER DEFAULT 0"),
+            ("daily_xp_goal", "INTEGER DEFAULT 100"),
+            ("daily_pomodoro_goal", "INTEGER DEFAULT 4"),
+            ("daily_quiz_goal", "INTEGER DEFAULT 10"),
+        ]
+        for col, typedef in migrations:
+            if col not in cols:
+                c.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
+        conn.commit()
+
+    # ── Seed de conquistas ───────────────────────────────────
+    def _seed_achievements(self, conn):
+        achievements = [
+            # Pomodoro
+            ("first_pomodoro", "Primeiro Pomodoro!", "Complete sua primeira sessão de foco", "🍅", 25, "pomodoro", "pomodoros_completed", 1),
+            ("pomodoro_10", "Focado", "Complete 10 sessões de foco", "🔥", 50, "pomodoro", "pomodoros_completed", 10),
+            ("pomodoro_50", "Mestre do Foco", "Complete 50 sessões de foco", "🧘", 150, "pomodoro", "pomodoros_completed", 50),
+            ("pomodoro_100", "Lenda do Pomodoro", "Complete 100 sessões de foco", "💎", 300, "pomodoro", "pomodoros_completed", 100),
+            ("pomodoro_marathon", "Maratonista", "Complete 8 pomodoros em um dia", "🏃", 100, "pomodoro", "daily_pomodoros", 8),
+            # Quiz
+            ("first_quiz", "Primeira Questão!", "Responda sua primeira questão", "📝", 15, "quiz", "quizzes_completed", 1),
+            ("quiz_50", "Estudioso", "Responda 50 questões", "📚", 75, "quiz", "quizzes_completed", 50),
+            ("quiz_200", "Enciclopédia", "Responda 200 questões", "🎓", 200, "quiz", "quizzes_completed", 200),
+            ("perfect_quiz", "Nota Máxima!", "Acerte 100% em um quiz", "⭐", 100, "quiz", "perfect_score", 1),
+            ("enem_warrior", "Guerreiro do ENEM", "Complete 5 simulados ENEM", "🎯", 150, "quiz", "enem_quizzes", 5),
+            # Streak
+            ("streak_3", "Consistente", "Estude 3 dias seguidos", "📅", 50, "streak", "streak_days", 3),
+            ("streak_7", "Semana Perfeita", "Estude 7 dias seguidos", "🌟", 150, "streak", "streak_days", 7),
+            ("streak_30", "Mês de Ouro", "Estude 30 dias seguidos", "👑", 500, "streak", "streak_days", 30),
+            # Flashcards
+            ("first_flashcard", "Primeiro Flashcard!", "Crie seu primeiro flashcard", "🃏", 15, "flashcard", "flashcards_created", 1),
+            ("flashcard_master", "Memória de Elefante", "Revise 100 flashcards", "🧠", 100, "flashcard", "flashcards_reviewed", 100),
+            # Tarefas
+            ("first_task", "Organizado", "Complete sua primeira tarefa", "✅", 20, "task", "tasks_completed", 1),
+            ("task_25", "Produtivo", "Complete 25 tarefas", "🚀", 100, "task", "tasks_completed", 25),
+            # Níveis
+            ("level_5", "Estudante Dedicado", "Alcance o nível 5", "🎖️", 0, "level", "level_reached", 5),
+            ("level_10", "Veterano", "Alcance o nível 10", "🏅", 0, "level", "level_reached", 10),
+            ("level_25", "Mestre dos Estudos", "Alcance o nível 25", "🏆", 0, "level", "level_reached", 25),
+            # Horas
+            ("hours_5", "5 Horas de Estudo", "Acumule 5 horas de foco", "⏰", 75, "hours", "focus_hours", 5),
+            ("hours_25", "25 Horas de Estudo", "Acumule 25 horas de foco", "⌛", 200, "hours", "focus_hours", 25),
+            ("hours_100", "100 Horas de Estudo", "Acumule 100 horas de foco", "⏳", 500, "hours", "focus_hours", 100),
+        ]
+        for a in achievements:
+            conn.execute(
+                """INSERT INTO achievements (key, title, description, emoji, xp_reward,
+                   category, requirement_type, requirement_value)
+                   VALUES (?,?,?,?,?,?,?,?)""", a
+            )
+        conn.commit()
+
+    # ── Seed de flashcards padrão ────────────────────────────
+    def _seed_flashcards(self, conn):
+        cards = [
+            # Matemática
+            ("enem", "Matemática", "Fórmulas", "Área do triângulo", "(base × altura) / 2", "fácil"),
+            ("enem", "Matemática", "Fórmulas", "Área do círculo", "π × r²", "fácil"),
+            ("enem", "Matemática", "Fórmulas", "Teorema de Pitágoras", "a² = b² + c² (hipotenusa² = cateto² + cateto²)", "fácil"),
+            ("enem", "Matemática", "Fórmulas", "Fórmula de Bhaskara", "x = (-b ± √Δ) / 2a, onde Δ = b² - 4ac", "médio"),
+            ("enem", "Matemática", "Fórmulas", "Volume da esfera", "(4/3) × π × r³", "médio"),
+            ("enem", "Matemática", "Fórmulas", "Progressão Aritmética (termo geral)", "aₙ = a₁ + (n-1) × r", "médio"),
+            ("enem", "Matemática", "Fórmulas", "Juros compostos", "M = C × (1 + i)ⁿ", "difícil"),
+            # Física
+            ("enem", "Ciências da Natureza", "Física", "2ª Lei de Newton", "F = m × a (Força = massa × aceleração)", "fácil"),
+            ("enem", "Ciências da Natureza", "Física", "Velocidade média", "v = Δs / Δt (variação do espaço / variação do tempo)", "fácil"),
+            ("enem", "Ciências da Natureza", "Física", "Energia cinética", "Ec = (m × v²) / 2", "médio"),
+            ("enem", "Ciências da Natureza", "Física", "Lei de Ohm", "V = R × I (Tensão = Resistência × Corrente)", "médio"),
+            # Química
+            ("enem", "Ciências da Natureza", "Química", "O que é pH?", "Potencial hidrogeniônico. pH < 7 = ácido, pH = 7 = neutro, pH > 7 = básico", "fácil"),
+            ("enem", "Ciências da Natureza", "Química", "Lei de Lavoisier", "Na natureza nada se cria, nada se perde, tudo se transforma (conservação de massa)", "fácil"),
+            ("enem", "Ciências da Natureza", "Química", "Número de Avogadro", "6,022 × 10²³ (número de entidades em 1 mol)", "médio"),
+            # Biologia
+            ("enem", "Ciências da Natureza", "Biologia", "Mitose vs Meiose", "Mitose: 2 células iguais (2n). Meiose: 4 células diferentes (n) - gametas", "médio"),
+            ("enem", "Ciências da Natureza", "Biologia", "Fotossíntese (equação)", "6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂ (luz + clorofila)", "médio"),
+            # História
+            ("enem", "Ciências Humanas", "História", "Proclamação da República", "15 de novembro de 1889 — Marechal Deodoro da Fonseca", "fácil"),
+            ("enem", "Ciências Humanas", "História", "Independência do Brasil", "7 de setembro de 1822 — Dom Pedro I às margens do Ipiranga", "fácil"),
+            ("enem", "Ciências Humanas", "História", "Revolução Francesa", "1789 — Queda da Bastilha. Lema: Liberdade, Igualdade, Fraternidade", "médio"),
+            # Geografia
+            ("enem", "Ciências Humanas", "Geografia", "Camadas da Terra", "Crosta, Manto, Núcleo externo, Núcleo interno", "fácil"),
+            ("enem", "Ciências Humanas", "Geografia", "Biomas brasileiros", "Amazônia, Cerrado, Mata Atlântica, Caatinga, Pampa, Pantanal", "fácil"),
+            # Português / Redação
+            ("enem", "Linguagens", "Gramática", "Tipos de 'porquê'", "Por que (pergunta), Porque (resposta), Por quê (fim de frase), Porquê (substantivo)", "médio"),
+            ("enem", "Redação", "Competências", "5 competências da redação ENEM",
+             "C1: Norma culpa\nC2: Compreensão do tema\nC3: Argumentação\nC4: Coesão\nC5: Proposta de intervenção", "médio"),
+        ]
+        for card in cards:
+            conn.execute(
+                """INSERT INTO flashcards (category, subject, topic, front, back, difficulty)
+                   VALUES (?,?,?,?,?,?)""", card
+            )
+        conn.commit()
 
     # ── SEED de conteúdo ─────────────────────────────────────
     def _seed_content(self, conn):
@@ -963,3 +1166,551 @@ class DatabaseManager:
         ).fetchall()
         conn.close()
         return [dict(r) for r in rows]
+
+    # ══════════════════════════════════════════════════════════
+    # ── GAMIFICAÇÃO — XP, Níveis, Conquistas ─────────────────
+    # ══════════════════════════════════════════════════════════
+
+    XP_PER_LEVEL = 100  # XP necessário por nível (scaling)
+
+    def xp_for_level(self, level: int) -> int:
+        """XP total necessário para alcançar um nível."""
+        return int(self.XP_PER_LEVEL * level * 1.2)
+
+    def add_xp(self, user_id: int, amount: int, source: str, description: str = "") -> dict:
+        """Adiciona XP ao usuário. Retorna {"new_xp", "new_level", "leveled_up", "achievements"}."""
+        if not user_id or amount <= 0:
+            return {"new_xp": 0, "new_level": 1, "leveled_up": False, "achievements": []}
+
+        conn = self._conn()
+        user = conn.execute("SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
+        if not user:
+            conn.close()
+            return {"new_xp": 0, "new_level": 1, "leveled_up": False, "achievements": []}
+
+        old_level = user["level"] or 1
+        new_xp = (user["xp"] or 0) + amount
+
+        # Calcular novo nível
+        new_level = old_level
+        while new_xp >= self.xp_for_level(new_level + 1):
+            new_level += 1
+
+        conn.execute("UPDATE users SET xp=?, level=? WHERE id=?", (new_xp, new_level, user_id))
+        conn.execute(
+            "INSERT INTO xp_log (user_id, amount, source, description) VALUES (?,?,?,?)",
+            (user_id, amount, source, description),
+        )
+        conn.commit()
+        conn.close()
+
+        # Verificar conquistas de nível
+        new_achievements = []
+        if new_level > old_level:
+            level_achievements = self._check_level_achievements(user_id, new_level)
+            new_achievements.extend(level_achievements)
+
+        return {
+            "new_xp": new_xp,
+            "new_level": new_level,
+            "leveled_up": new_level > old_level,
+            "achievements": new_achievements,
+        }
+
+    def get_xp_info(self, user_id: int) -> dict:
+        """Retorna informações de XP do usuário."""
+        if not user_id:
+            return {"xp": 0, "level": 1, "xp_current_level": 0, "xp_next_level": 120, "progress": 0.0}
+        conn = self._conn()
+        user = conn.execute("SELECT xp, level FROM users WHERE id=?", (user_id,)).fetchone()
+        conn.close()
+        if not user:
+            return {"xp": 0, "level": 1, "xp_current_level": 0, "xp_next_level": 120, "progress": 0.0}
+
+        xp = user["xp"] or 0
+        level = user["level"] or 1
+        xp_this = self.xp_for_level(level)
+        xp_next = self.xp_for_level(level + 1)
+        progress = (xp - xp_this) / (xp_next - xp_this) if (xp_next - xp_this) > 0 else 0.0
+        return {
+            "xp": xp, "level": level,
+            "xp_current_level": xp_this, "xp_next_level": xp_next,
+            "progress": min(max(progress, 0.0), 1.0),
+        }
+
+    def get_xp_today(self, user_id: int) -> int:
+        """Retorna XP ganho hoje."""
+        if not user_id:
+            return 0
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT COALESCE(SUM(amount),0) as total FROM xp_log WHERE user_id=? AND DATE(earned_at)=DATE('now','localtime')",
+            (user_id,),
+        ).fetchone()
+        conn.close()
+        return row["total"] if row else 0
+
+    def update_streak(self, user_id: int) -> dict:
+        """Atualiza streak do usuário. Chamar ao logar ou completar atividade."""
+        if not user_id:
+            return {"streak": 0, "is_new_day": False}
+        conn = self._conn()
+        user = conn.execute(
+            "SELECT streak_days, last_active_date, longest_streak FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        if not user:
+            conn.close()
+            return {"streak": 0, "is_new_day": False}
+
+        today = datetime.now().strftime("%Y-%m-%d")
+        last = user["last_active_date"]
+        streak = user["streak_days"] or 0
+        longest = user["longest_streak"] or 0
+
+        if last == today:
+            conn.close()
+            return {"streak": streak, "is_new_day": False}
+
+        from datetime import timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+        if last == yesterday:
+            streak += 1
+        elif last is None or last != today:
+            streak = 1
+
+        if streak > longest:
+            longest = streak
+
+        conn.execute(
+            "UPDATE users SET streak_days=?, last_active_date=?, longest_streak=? WHERE id=?",
+            (streak, today, longest, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+        # Verificar conquistas de streak
+        self._check_streak_achievements(user_id, streak)
+
+        return {"streak": streak, "is_new_day": True}
+
+    def get_streak(self, user_id: int) -> dict:
+        """Retorna informações de streak."""
+        if not user_id:
+            return {"streak": 0, "longest": 0, "last_active": None}
+        conn = self._conn()
+        user = conn.execute(
+            "SELECT streak_days, longest_streak, last_active_date FROM users WHERE id=?",
+            (user_id,),
+        ).fetchone()
+        conn.close()
+        if not user:
+            return {"streak": 0, "longest": 0, "last_active": None}
+        return {
+            "streak": user["streak_days"] or 0,
+            "longest": user["longest_streak"] or 0,
+            "last_active": user["last_active_date"],
+        }
+
+    # ── Conquistas ───────────────────────────────────────────
+    def get_all_achievements(self) -> list[dict]:
+        conn = self._conn()
+        rows = conn.execute("SELECT * FROM achievements ORDER BY category, requirement_value").fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_user_achievements(self, user_id: int) -> list[dict]:
+        if not user_id:
+            return []
+        conn = self._conn()
+        rows = conn.execute(
+            """SELECT a.*, ua.earned_at
+               FROM user_achievements ua
+               JOIN achievements a ON ua.achievement_id = a.id
+               WHERE ua.user_id=?
+               ORDER BY ua.earned_at DESC""",
+            (user_id,),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def grant_achievement(self, user_id: int, achievement_key: str) -> dict | None:
+        """Concede uma conquista ao usuário. Retorna a conquista ou None se já tinha."""
+        if not user_id:
+            return None
+        conn = self._conn()
+        ach = conn.execute("SELECT * FROM achievements WHERE key=?", (achievement_key,)).fetchone()
+        if not ach:
+            conn.close()
+            return None
+        try:
+            conn.execute(
+                "INSERT INTO user_achievements (user_id, achievement_id) VALUES (?,?)",
+                (user_id, ach["id"]),
+            )
+            conn.commit()
+            # Dar XP da conquista
+            if ach["xp_reward"] > 0:
+                self.add_xp(user_id, ach["xp_reward"], "achievement", f"Conquista: {ach['title']}")
+            conn.close()
+            return dict(ach)
+        except Exception:
+            conn.close()
+            return None
+
+    def has_achievement(self, user_id: int, achievement_key: str) -> bool:
+        if not user_id:
+            return False
+        conn = self._conn()
+        row = conn.execute(
+            """SELECT 1 FROM user_achievements ua
+               JOIN achievements a ON ua.achievement_id=a.id
+               WHERE ua.user_id=? AND a.key=?""",
+            (user_id, achievement_key),
+        ).fetchone()
+        conn.close()
+        return row is not None
+
+    def check_and_grant_achievements(self, user_id: int) -> list[dict]:
+        """Verifica e concede todas as conquistas pendentes."""
+        if not user_id:
+            return []
+        earned = []
+        stats = self._get_achievement_stats(user_id)
+        all_achs = self.get_all_achievements()
+
+        for ach in all_achs:
+            if self.has_achievement(user_id, ach["key"]):
+                continue
+            req_type = ach.get("requirement_type", "")
+            req_val = ach.get("requirement_value", 0)
+            current = stats.get(req_type, 0)
+            if current >= req_val:
+                result = self.grant_achievement(user_id, ach["key"])
+                if result:
+                    earned.append(result)
+        return earned
+
+    def _get_achievement_stats(self, user_id: int) -> dict:
+        """Coleta estatísticas para verificar conquistas."""
+        conn = self._conn()
+        s = {}
+
+        # Pomodoros completados
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM pomodoro_sessions WHERE user_id=? AND session_type='foco'",
+            (user_id,),
+        ).fetchone()
+        s["pomodoros_completed"] = row["c"] if row else 0
+
+        # Pomodoros hoje
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM pomodoro_sessions WHERE user_id=? AND session_type='foco' AND DATE(completed_at)=DATE('now','localtime')",
+            (user_id,),
+        ).fetchone()
+        s["daily_pomodoros"] = row["c"] if row else 0
+
+        # Quizzes respondidos
+        row = conn.execute(
+            "SELECT COALESCE(SUM(total_questions),0) as c FROM study_progress WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        s["quizzes_completed"] = row["c"] if row else 0
+
+        # Quiz perfeito
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM study_progress WHERE user_id=? AND score>=100",
+            (user_id,),
+        ).fetchone()
+        s["perfect_score"] = row["c"] if row else 0
+
+        # ENEM quizzes
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM enem_quiz_progress WHERE user_id=?",
+            (user_id,),
+        ).fetchone()
+        s["enem_quizzes"] = row["c"] if row else 0
+
+        # Streak
+        user = conn.execute(
+            "SELECT streak_days, level FROM users WHERE id=?", (user_id,),
+        ).fetchone()
+        s["streak_days"] = user["streak_days"] if user else 0
+        s["level_reached"] = user["level"] if user else 1
+
+        # Flashcards criados
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM flashcards WHERE user_id=?", (user_id,),
+        ).fetchone()
+        s["flashcards_created"] = row["c"] if row else 0
+
+        # Flashcards revisados
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM flashcard_reviews WHERE user_id=?", (user_id,),
+        ).fetchone()
+        s["flashcards_reviewed"] = row["c"] if row else 0
+
+        # Tarefas concluídas
+        row = conn.execute(
+            "SELECT COUNT(*) as c FROM tasks WHERE user_id=? AND status='concluída'",
+            (user_id,),
+        ).fetchone()
+        s["tasks_completed"] = row["c"] if row else 0
+
+        # Horas de foco
+        row = conn.execute(
+            "SELECT COALESCE(SUM(duration),0) as m FROM pomodoro_sessions WHERE user_id=? AND session_type='foco'",
+            (user_id,),
+        ).fetchone()
+        s["focus_hours"] = (row["m"] if row else 0) / 60
+
+        conn.close()
+        return s
+
+    def _check_level_achievements(self, user_id, level):
+        earned = []
+        mapping = {5: "level_5", 10: "level_10", 25: "level_25"}
+        for lvl, key in mapping.items():
+            if level >= lvl and not self.has_achievement(user_id, key):
+                r = self.grant_achievement(user_id, key)
+                if r:
+                    earned.append(r)
+        return earned
+
+    def _check_streak_achievements(self, user_id, streak):
+        mapping = {3: "streak_3", 7: "streak_7", 30: "streak_30"}
+        for days, key in mapping.items():
+            if streak >= days and not self.has_achievement(user_id, key):
+                self.grant_achievement(user_id, key)
+
+    # ══════════════════════════════════════════════════════════
+    # ── FLASHCARDS ───────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+
+    def create_flashcard(self, front, back, subject, topic="", category="enem",
+                         difficulty="médio", user_id=None) -> int:
+        conn = self._conn()
+        conn.execute(
+            """INSERT INTO flashcards (user_id, category, subject, topic, front, back, difficulty)
+               VALUES (?,?,?,?,?,?,?)""",
+            (user_id, category, subject, topic, front, back, difficulty),
+        )
+        conn.commit()
+        fid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+        conn.close()
+        return fid
+
+    def get_flashcards(self, user_id=None, category=None, subject=None) -> list[dict]:
+        conn = self._conn()
+        q = "SELECT * FROM flashcards WHERE (user_id IS ? OR user_id IS NULL)"
+        params: list = [user_id]
+        if category:
+            q += " AND category=?"
+            params.append(category)
+        if subject:
+            q += " AND subject=?"
+            params.append(subject)
+        q += " ORDER BY subject, topic"
+        rows = conn.execute(q, params).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def get_flashcards_for_review(self, user_id=None, limit=20) -> list[dict]:
+        """Retorna flashcards que precisam ser revisados (repetição espaçada)."""
+        conn = self._conn()
+        # Cards nunca revisados ou com revisão vencida
+        rows = conn.execute(
+            """SELECT f.*, fr.easiness, fr.interval, fr.repetitions, fr.next_review
+               FROM flashcards f
+               LEFT JOIN (
+                   SELECT flashcard_id, easiness, interval, repetitions, next_review,
+                          ROW_NUMBER() OVER (PARTITION BY flashcard_id ORDER BY reviewed_at DESC) as rn
+                   FROM flashcard_reviews WHERE user_id IS ?
+               ) fr ON f.id = fr.flashcard_id AND fr.rn = 1
+               WHERE (f.user_id IS ? OR f.user_id IS NULL)
+                 AND (fr.next_review IS NULL OR fr.next_review <= datetime('now','localtime'))
+               ORDER BY CASE WHEN fr.next_review IS NULL THEN 0 ELSE 1 END, fr.next_review
+               LIMIT ?""",
+            (user_id, user_id, limit),
+        ).fetchall()
+        conn.close()
+        return [dict(r) for r in rows]
+
+    def save_flashcard_review(self, flashcard_id: int, quality: int, user_id=None) -> dict:
+        """
+        Salva revisão de flashcard usando algoritmo SM-2.
+        quality: 0-5 (0=esqueceu, 5=perfeito)
+        Retorna {"easiness", "interval", "next_review"}.
+        """
+        conn = self._conn()
+        # Buscar estado anterior
+        prev = conn.execute(
+            """SELECT easiness, interval, repetitions FROM flashcard_reviews
+               WHERE flashcard_id=? AND user_id IS ?
+               ORDER BY reviewed_at DESC LIMIT 1""",
+            (flashcard_id, user_id),
+        ).fetchone()
+
+        if prev:
+            easiness = prev["easiness"]
+            interval = prev["interval"]
+            reps = prev["repetitions"]
+        else:
+            easiness = 2.5
+            interval = 1
+            reps = 0
+
+        # Algoritmo SM-2
+        if quality >= 3:
+            if reps == 0:
+                interval = 1
+            elif reps == 1:
+                interval = 6
+            else:
+                interval = int(interval * easiness)
+            reps += 1
+        else:
+            reps = 0
+            interval = 1
+
+        easiness = max(1.3, easiness + 0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02))
+
+        next_review = (datetime.now() + __import__('datetime').timedelta(days=interval)).isoformat()
+
+        conn.execute(
+            """INSERT INTO flashcard_reviews
+               (user_id, flashcard_id, quality, easiness, interval, repetitions, next_review)
+               VALUES (?,?,?,?,?,?,?)""",
+            (user_id, flashcard_id, quality, easiness, interval, reps, next_review),
+        )
+        conn.commit()
+        conn.close()
+        return {"easiness": easiness, "interval": interval, "next_review": next_review}
+
+    def delete_flashcard(self, flashcard_id: int):
+        conn = self._conn()
+        conn.execute("DELETE FROM flashcard_reviews WHERE flashcard_id=?", (flashcard_id,))
+        conn.execute("DELETE FROM flashcards WHERE id=?", (flashcard_id,))
+        conn.commit()
+        conn.close()
+
+    def get_flashcard_subjects(self, user_id=None) -> list[str]:
+        conn = self._conn()
+        rows = conn.execute(
+            """SELECT DISTINCT subject FROM flashcards
+               WHERE (user_id IS ? OR user_id IS NULL)
+               ORDER BY subject""",
+            (user_id,),
+        ).fetchall()
+        conn.close()
+        return [r["subject"] for r in rows]
+
+    def get_flashcard_stats(self, user_id=None) -> dict:
+        conn = self._conn()
+        total = conn.execute(
+            "SELECT COUNT(*) as c FROM flashcards WHERE (user_id IS ? OR user_id IS NULL)",
+            (user_id,),
+        ).fetchone()["c"]
+        reviewed = conn.execute(
+            "SELECT COUNT(DISTINCT flashcard_id) as c FROM flashcard_reviews WHERE user_id IS ?",
+            (user_id,),
+        ).fetchone()["c"]
+        due = conn.execute(
+            """SELECT COUNT(*) as c FROM flashcards f
+               LEFT JOIN (
+                   SELECT flashcard_id, next_review,
+                          ROW_NUMBER() OVER (PARTITION BY flashcard_id ORDER BY reviewed_at DESC) as rn
+                   FROM flashcard_reviews WHERE user_id IS ?
+               ) fr ON f.id=fr.flashcard_id AND fr.rn=1
+               WHERE (f.user_id IS ? OR f.user_id IS NULL)
+                 AND (fr.next_review IS NULL OR fr.next_review <= datetime('now','localtime'))""",
+            (user_id, user_id),
+        ).fetchone()["c"]
+        conn.close()
+        return {"total": total, "reviewed": reviewed, "due": due}
+
+    # ══════════════════════════════════════════════════════════
+    # ── METAS DIÁRIAS ────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+
+    def get_or_create_daily_goals(self, user_id: int) -> list[dict]:
+        """Retorna metas do dia, criando se não existirem."""
+        if not user_id:
+            return []
+        today = datetime.now().strftime("%Y-%m-%d")
+        conn = self._conn()
+
+        goals = conn.execute(
+            "SELECT * FROM daily_goals WHERE user_id=? AND date=?",
+            (user_id, today),
+        ).fetchall()
+
+        if not goals:
+            user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+            default_goals = [
+                ("pomodoro", user["daily_pomodoro_goal"] if user else 4),
+                ("xp", user["daily_xp_goal"] if user else 100),
+                ("quiz", user["daily_quiz_goal"] if user else 10),
+            ]
+            for gtype, target in default_goals:
+                conn.execute(
+                    "INSERT INTO daily_goals (user_id, goal_type, target_value, date) VALUES (?,?,?,?)",
+                    (user_id, gtype, target, today),
+                )
+            conn.commit()
+            goals = conn.execute(
+                "SELECT * FROM daily_goals WHERE user_id=? AND date=?",
+                (user_id, today),
+            ).fetchall()
+
+        conn.close()
+        return [dict(g) for g in goals]
+
+    def update_daily_goal_progress(self, user_id: int, goal_type: str, increment: int = 1):
+        """Incrementa o progresso de uma meta diária."""
+        if not user_id:
+            return
+        today = datetime.now().strftime("%Y-%m-%d")
+        self.get_or_create_daily_goals(user_id)  # garantir que existe
+        conn = self._conn()
+        conn.execute(
+            """UPDATE daily_goals SET current_value = current_value + ?,
+               completed = CASE WHEN current_value + ? >= target_value THEN 1 ELSE 0 END
+               WHERE user_id=? AND goal_type=? AND date=?""",
+            (increment, increment, user_id, goal_type, today),
+        )
+        conn.commit()
+        conn.close()
+
+    def get_daily_goals_summary(self, user_id: int) -> dict:
+        """Resumo rápido das metas de hoje."""
+        goals = self.get_or_create_daily_goals(user_id)
+        completed = sum(1 for g in goals if g["completed"])
+        return {
+            "goals": goals,
+            "total": len(goals),
+            "completed": completed,
+            "all_done": completed == len(goals),
+        }
+
+    def get_today_stats(self, user_id: int) -> dict:
+        """Estatísticas de hoje para o dashboard."""
+        if not user_id:
+            return {"pomodoros": 0, "focus_min": 0, "questions": 0, "xp_today": 0}
+        conn = self._conn()
+        pom = conn.execute(
+            "SELECT COUNT(*) as c, COALESCE(SUM(duration),0) as m FROM pomodoro_sessions WHERE user_id=? AND session_type='foco' AND DATE(completed_at)=DATE('now','localtime')",
+            (user_id,),
+        ).fetchone()
+        quiz = conn.execute(
+            "SELECT COALESCE(SUM(total_questions),0) as c FROM study_progress WHERE user_id=? AND DATE(completed_at)=DATE('now','localtime')",
+            (user_id,),
+        ).fetchone()
+        conn.close()
+        return {
+            "pomodoros": pom["c"] if pom else 0,
+            "focus_min": pom["m"] if pom else 0,
+            "questions": quiz["c"] if quiz else 0,
+            "xp_today": self.get_xp_today(user_id),
+        }

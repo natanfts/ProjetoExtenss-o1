@@ -145,6 +145,13 @@ class TasksView(ctk.CTkFrame):
             self.db.update_task(task_id, status="pendente", completed_at=None)
         else:
             self.db.complete_task(task_id)
+            # Gamificação: XP ao completar tarefa
+            uid = self.app.get_user_id()
+            if uid:
+                self.db.add_xp(uid, 15, "task", "Tarefa concluída")
+                self.db.update_daily_goal_progress(uid, "xp", 15)
+                self.db.check_and_grant_achievements(uid)
+                self.app.refresh_xp_sidebar()
         self._load_tasks()
 
     def _delete(self, task_id):
