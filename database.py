@@ -11,7 +11,7 @@ class DatabaseManager:
     def __init__(self, db_path=None):
         if db_path is None:
             base = os.path.dirname(os.path.abspath(__file__))
-            db_path = os.path.join(base, "pomodoro_study.db")
+            db_path = os.path.join(base, "switch_focus.db")
         self.db_path = db_path
         self._init_database()
 
@@ -244,6 +244,21 @@ class DatabaseManager:
             )
         """)
 
+        # ── Progresso de Teoria (editais) ─────────────────
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS theory_progress (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                area TEXT NOT NULL,
+                topic_title TEXT NOT NULL,
+                read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed INTEGER DEFAULT 0,
+                notes TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id),
+                UNIQUE(user_id, area, topic_title)
+            )
+        """)
+
         conn.commit()
 
         # Migrar colunas extras em users (XP, streak, etc.)
@@ -287,6 +302,13 @@ class DatabaseManager:
             if col not in cols:
                 c.execute(f"ALTER TABLE users ADD COLUMN {col} {typedef}")
         conn.commit()
+
+        # Migração: coluna deadline na tabela tasks
+        task_cols = [r[1]
+                     for r in c.execute("PRAGMA table_info(tasks)").fetchall()]
+        if "deadline" not in task_cols:
+            c.execute("ALTER TABLE tasks ADD COLUMN deadline TEXT")
+            conn.commit()
 
     # ── Seed de conquistas ───────────────────────────────────
     def _seed_achievements(self, conn):
@@ -834,12 +856,12 @@ class DatabaseManager:
         return dict(user) if user else None
 
     # ── Tarefas ──────────────────────────────────────────────
-    def create_task(self, title, description="", priority="média", pomodoros_est=1, user_id=None):
+    def create_task(self, title, description="", priority="média", pomodoros_est=1, user_id=None, deadline=None):
         conn = self._conn()
         conn.execute(
-            """INSERT INTO tasks (user_id, title, description, priority, pomodoros_est)
-               VALUES (?,?,?,?,?)""",
-            (user_id, title, description, priority, pomodoros_est),
+            """INSERT INTO tasks (user_id, title, description, priority, pomodoros_est, deadline)
+               VALUES (?,?,?,?,?,?)""",
+            (user_id, title, description, priority, pomodoros_est, deadline),
         )
         conn.commit()
         task_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -1719,6 +1741,25 @@ class DatabaseManager:
         conn.commit()
         conn.close()
 
+    def delete_all_flashcards(self, user_id=None):
+        """Remove todos os flashcards e suas revisões do usuário."""
+        conn = self._conn()
+        # Pegar IDs dos flashcards do usuário
+        rows = conn.execute(
+            "SELECT id FROM flashcards WHERE (user_id IS ? OR user_id IS NULL)",
+            (user_id,),
+        ).fetchall()
+        ids = [r["id"] for r in rows]
+        if ids:
+            placeholders = ",".join("?" * len(ids))
+            conn.execute(
+                f"DELETE FROM flashcard_reviews WHERE flashcard_id IN ({placeholders})", ids)
+            conn.execute(
+                f"DELETE FROM flashcards WHERE id IN ({placeholders})", ids)
+        conn.commit()
+        conn.close()
+        return len(ids)
+
     def get_flashcard_subjects(self, user_id=None) -> list[str]:
         conn = self._conn()
         rows = conn.execute(
@@ -1839,3 +1880,112 @@ class DatabaseManager:
             "questions": quiz["c"] if quiz else 0,
             "xp_today": self.get_xp_today(user_id),
         }
+
+    # ══════════════════════════════════════════════════════════
+    # ── TEORIA / EDITAIS ───────────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    def mark_theory_read(self, user_id: int, area: str, topic_title: str,
+                         completed: bool = True, notes: str = None):
+        """Marca um tópico teórico como lido/concluído."""
+        if not user_id:
+            return
+        conn = self._conn()
+        conn.execute("""
+            INSERT INTO theory_progress (user_id, area, topic_title, completed, notes)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id, area, topic_title)
+            DO UPDATE SET completed=?, notes=COALESCE(?, notes), read_at=CURRENT_TIMESTAMP
+        """, (user_id, area, topic_title, int(completed), notes,
+              int(completed), notes))
+        conn.commit()
+        conn.close()
+
+        # XP por estudar teoria
+        if completed:
+            self.add_xp(user_id, 15, "teoria", f"Estudou: {topic_title}")
+            self.update_daily_goal_progress(user_id, "teoria")
+
+    def get_theory_progress(self, user_id: int) -> dict:
+        """Retorna progresso de teoria: {(area, topic_title): {completed, read_at, notes}}."""
+        if not user_id:
+            return {}
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT area, topic_title, completed, read_at, notes FROM theory_progress WHERE user_id=?",
+            (user_id,),
+        ).fetchall()
+        conn.close()
+        return {
+            (r["area"], r["topic_title"]): {
+                "completed": bool(r["completed"]),
+                "read_at": r["read_at"],
+                "notes": r["notes"],
+            }
+            for r in rows
+        }
+
+    def get_theory_stats(self, user_id: int) -> dict:
+        """Retorna estatísticas de progresso de teoria por área."""
+        if not user_id:
+            return {}
+        conn = self._conn()
+        rows = conn.execute("""
+            SELECT area, COUNT(*) as read_count,
+                   SUM(CASE WHEN completed=1 THEN 1 ELSE 0 END) as completed_count
+            FROM theory_progress WHERE user_id=?
+            GROUP BY area
+        """, (user_id,)).fetchall()
+        conn.close()
+        return {
+            r["area"]: {"read": r["read_count"],
+                        "completed": r["completed_count"]}
+            for r in rows
+        }
+
+    # ══════════════════════════════════════════════════════════
+    # ── NOVOS MÉTODOS — Settings / Perfil ────────────────────
+    # ══════════════════════════════════════════════════════════
+    def update_user_goals(self, user_id: int, pomodoro: int, xp: int, quiz: int):
+        """Atualiza as metas diárias do usuário."""
+        conn = self._conn()
+        conn.execute(
+            "UPDATE users SET daily_pomodoro_goal=?, daily_xp_goal=?, daily_quiz_goal=? WHERE id=?",
+            (pomodoro, xp, quiz, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_user_display_name(self, user_id: int, new_name: str):
+        """Atualiza o nome de exibição do usuário."""
+        conn = self._conn()
+        conn.execute(
+            "UPDATE users SET display_name=? WHERE id=?",
+            (new_name, user_id),
+        )
+        conn.commit()
+        conn.close()
+
+    def update_user_password(self, user_id: int, old_password: str, new_password: str) -> bool:
+        """Altera a senha do usuário. Retorna True se sucesso, False se senha antiga incorreta."""
+        conn = self._conn()
+        user = conn.execute(
+            "SELECT password_hash FROM users WHERE id=?", (user_id,)
+        ).fetchone()
+        if not user or user["password_hash"] != self._hash(old_password):
+            conn.close()
+            return False
+        conn.execute(
+            "UPDATE users SET password_hash=? WHERE id=?",
+            (self._hash(new_password), user_id),
+        )
+        conn.commit()
+        conn.close()
+        return True
+
+    def clear_pomodoro_sessions(self, user_id: int):
+        """Remove todas as sessões Pomodoro de um usuário."""
+        conn = self._conn()
+        conn.execute(
+            "DELETE FROM pomodoro_sessions WHERE user_id=?", (user_id,))
+        conn.commit()
+        conn.close()

@@ -1,5 +1,6 @@
 import customtkinter as ctk
 from CTkMessagebox import CTkMessagebox
+from datetime import datetime
 
 
 class TasksView(ctk.CTkFrame):
@@ -29,7 +30,8 @@ class TasksView(ctk.CTkFrame):
         btn_area.grid(row=0, column=2, sticky="e")
 
         self.filter_menu = ctk.CTkOptionMenu(
-            btn_area, values=["Todas", "Pendentes", "Concluídas"],
+            btn_area, values=["Todas", "Pendentes",
+                              "Concluídas", "Alta", "Média", "Baixa"],
             width=130, command=self._on_filter,
         )
         self.filter_menu.grid(row=0, column=0, padx=5)
@@ -64,6 +66,10 @@ class TasksView(ctk.CTkFrame):
 
         tasks = self.db.get_tasks(
             user_id=self.app.get_user_id(), status=status)
+
+        # Filtrar por prioridade se selecionado
+        if self._filter in ("alta", "média", "baixa"):
+            tasks = [t for t in tasks if t.get("priority") == self._filter]
 
         if not tasks:
             self.empty_label = ctk.CTkLabel(
@@ -116,8 +122,27 @@ class TasksView(ctk.CTkFrame):
 
         desc_text = task.get("description", "") or ""
         pom_text = f"🍅 {task['pomodoros_done']}/{task['pomodoros_est']}"
+
+        # Deadline
+        deadline_text = ""
+        deadline = task.get("deadline")
+        if deadline:
+            try:
+                dl = datetime.strptime(deadline, "%Y-%m-%d")
+                days_left = (dl.date() - datetime.now().date()).days
+                if days_left < 0:
+                    deadline_text = f"  •  ⚠️ Atrasada ({abs(days_left)}d)"
+                elif days_left == 0:
+                    deadline_text = "  •  🚨 Vence hoje!"
+                elif days_left <= 3:
+                    deadline_text = f"  •  ⏳ {days_left}d restantes"
+                else:
+                    deadline_text = f"  •  📅 {dl.strftime('%d/%m')}"
+            except ValueError:
+                pass
+
         sub = ctk.CTkLabel(
-            inner, text=f"{desc_text}  {pom_text}".strip(),
+            inner, text=f"{desc_text}  {pom_text}{deadline_text}".strip(),
             font=ctk.CTkFont(size=12),
             anchor="w", text_color=t["text_sec"],
         )
@@ -178,7 +203,7 @@ class TasksView(ctk.CTkFrame):
         t = self.app.theme_mgr.get_theme()
         win = ctk.CTkToplevel(self)
         win.title(title)
-        win.geometry("440x420")
+        win.geometry("440x500")
         win.transient(self)
         win.grab_set()
         win.configure(fg_color=t["bg"])
@@ -209,12 +234,28 @@ class TasksView(ctk.CTkFrame):
         pom_e.insert(0, "1")
         pom_e.pack(side="left")
 
+        # Campo de deadline
+        dl_frame = ctk.CTkFrame(win, fg_color="transparent")
+        dl_frame.pack(pady=6)
+        ctk.CTkLabel(dl_frame, text="📅 Prazo (dd/mm/aaaa):",
+                     text_color=t["text"]).pack(side="left", padx=5)
+        dl_e = ctk.CTkEntry(dl_frame, width=130, height=36,
+                            placeholder_text="ex: 15/06/2026",
+                            fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
+        dl_e.pack(side="left")
+
         if task:
             title_e.insert(0, task["title"])
             desc_e.insert(0, task.get("description") or "")
             prio_var.set(task["priority"])
             pom_e.delete(0, "end")
             pom_e.insert(0, str(task["pomodoros_est"]))
+            if task.get("deadline"):
+                try:
+                    dl = datetime.strptime(task["deadline"], "%Y-%m-%d")
+                    dl_e.insert(0, dl.strftime("%d/%m/%Y"))
+                except ValueError:
+                    pass
 
         def save():
             t_title = title_e.get().strip()
@@ -227,18 +268,32 @@ class TasksView(ctk.CTkFrame):
             except ValueError:
                 pom_val = 1
 
+            # Processar deadline
+            deadline_val = None
+            dl_text = dl_e.get().strip()
+            if dl_text:
+                try:
+                    deadline_val = datetime.strptime(
+                        dl_text, "%d/%m/%Y").strftime("%Y-%m-%d")
+                except ValueError:
+                    CTkMessagebox(title="Formato inválido",
+                                  message="Use o formato dd/mm/aaaa para o prazo.", icon="warning")
+                    return
+
             if task:
                 self.db.update_task(
                     task["id"], title=t_title,
                     description=desc_e.get().strip(),
                     priority=prio_var.get(),
                     pomodoros_est=pom_val,
+                    deadline=deadline_val,
                 )
             else:
                 self.db.create_task(
                     t_title, desc_e.get().strip(),
                     prio_var.get(), pom_val,
                     user_id=self.app.get_user_id(),
+                    deadline=deadline_val,
                 )
             win.destroy()
             self._load_tasks()
@@ -253,6 +308,14 @@ class TasksView(ctk.CTkFrame):
     # ── hooks ────────────────────────────────────────────────
     def on_show(self):
         self._load_tasks()
+        # Atalho: Ctrl+N para nova tarefa
+        self.app.bind("<Control-n>", self._on_ctrl_n)
+
+    def _on_ctrl_n(self, event=None):
+        """Atalho: Ctrl+N para criar nova tarefa."""
+        if not self.winfo_ismapped():
+            return
+        self._open_add_dialog()
 
     def apply_theme(self, t):
         self.configure(fg_color=t["bg"])

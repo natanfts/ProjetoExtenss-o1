@@ -181,9 +181,74 @@ class SettingsView(ctk.CTkFrame):
             command=self._save_goals_settings,
         ).pack(pady=(10, 18))
 
+        # ── Perfil do Usuário ─────────────────────────────
+        if self.app.current_user:
+            ctk.CTkLabel(
+                self.scroll, text="👤 Perfil do Usuário",
+                font=ctk.CTkFont(size=18, weight="bold"),
+                text_color=t["primary"],
+            ).pack(anchor="w", pady=(25, 12))
+
+            profile_card = ctk.CTkFrame(
+                self.scroll, corner_radius=12, fg_color=t["card"])
+            profile_card.pack(fill="x", pady=5)
+
+            # Alterar nome de exibição
+            name_row = ctk.CTkFrame(profile_card, fg_color="transparent")
+            name_row.pack(fill="x", padx=20, pady=8)
+            ctk.CTkLabel(name_row, text="📛 Nome de exibição:",
+                         font=ctk.CTkFont(size=14), text_color=t["text"]).pack(side="left")
+            self._name_entry = ctk.CTkEntry(
+                name_row, width=200, height=36,
+                fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
+            self._name_entry.insert(
+                0, self.app.current_user.get("display_name", ""))
+            self._name_entry.pack(side="right", padx=(10, 0))
+
+            ctk.CTkButton(
+                profile_card, text="💾 Salvar Nome",
+                width=200, height=34,
+                fg_color=t["button"], hover_color=t["button_hover"],
+                font=ctk.CTkFont(size=13),
+                command=self._save_display_name,
+            ).pack(pady=(5, 12))
+
+            # Alterar senha
+            ctk.CTkLabel(
+                profile_card, text="🔒 Alterar Senha",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=t["text"],
+            ).pack(anchor="w", padx=20, pady=(8, 4))
+
+            old_pw_row = ctk.CTkFrame(profile_card, fg_color="transparent")
+            old_pw_row.pack(fill="x", padx=20, pady=4)
+            ctk.CTkLabel(old_pw_row, text="Senha atual:",
+                         font=ctk.CTkFont(size=13), text_color=t["text"]).pack(side="left")
+            self._old_pw_entry = ctk.CTkEntry(
+                old_pw_row, width=200, height=36, show="•",
+                fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
+            self._old_pw_entry.pack(side="right", padx=(10, 0))
+
+            new_pw_row = ctk.CTkFrame(profile_card, fg_color="transparent")
+            new_pw_row.pack(fill="x", padx=20, pady=4)
+            ctk.CTkLabel(new_pw_row, text="Nova senha:",
+                         font=ctk.CTkFont(size=13), text_color=t["text"]).pack(side="left")
+            self._new_pw_entry = ctk.CTkEntry(
+                new_pw_row, width=200, height=36, show="•",
+                fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
+            self._new_pw_entry.pack(side="right", padx=(10, 0))
+
+            ctk.CTkButton(
+                profile_card, text="🔒 Alterar Senha",
+                width=200, height=34,
+                fg_color=t["button"], hover_color=t["button_hover"],
+                font=ctk.CTkFont(size=13),
+                command=self._save_password,
+            ).pack(pady=(5, 15))
+
         # ── Sobre ────────────────────────────────────────────
         ctk.CTkLabel(
-            self.scroll, text="ℹ️ Sobre o PomodoroStudy",
+            self.scroll, text="ℹ️ Sobre o Switch Focus",
             font=ctk.CTkFont(size=18, weight="bold"),
             text_color=t["primary"],
         ).pack(anchor="w", pady=(25, 12))
@@ -193,7 +258,7 @@ class SettingsView(ctk.CTkFrame):
         about_card.pack(fill="x", pady=5)
 
         about_text = (
-            "🍅 PomodoroStudy v2.0\n\n"
+            "🔀 Switch Focus v2.0\n\n"
             "Aplicativo de estudos com método Pomodoro integrado.\n"
             "Preparação para ENEM e Concursos com quizzes e videoaulas.\n"
             "Sistema de gamificação com XP, níveis e conquistas!\n"
@@ -415,13 +480,7 @@ class SettingsView(ctk.CTkFrame):
 
         if self.app.current_user:
             uid = self.app.current_user["id"]
-            conn = self.db._conn()
-            conn.execute(
-                "UPDATE users SET daily_pomodoro_goal=?, daily_xp_goal=?, daily_quiz_goal=? WHERE id=?",
-                (pom, xp, quiz, uid),
-            )
-            conn.commit()
-            conn.close()
+            self.db.update_user_goals(uid, pom, xp, quiz)
             self.app.current_user["daily_pomodoro_goal"] = pom
             self.app.current_user["daily_xp_goal"] = xp
             self.app.current_user["daily_quiz_goal"] = quiz
@@ -433,6 +492,43 @@ class SettingsView(ctk.CTkFrame):
                 message="Faça login para salvar as metas.",
                 icon="info",
             )
+
+    def _save_display_name(self):
+        """Salva o novo nome de exibição."""
+        new_name = self._name_entry.get().strip()
+        if not new_name:
+            CTkMessagebox(title="Atenção",
+                          message="O nome não pode ser vazio.", icon="warning")
+            return
+        uid = self.app.current_user["id"]
+        self.db.update_user_display_name(uid, new_name)
+        self.app.current_user["display_name"] = new_name
+        self.app.user_label.configure(text=f"👤 {new_name}")
+        CTkMessagebox(title="Salvo ✅",
+                      message="Nome atualizado com sucesso!", icon="check")
+
+    def _save_password(self):
+        """Altera a senha do usuário."""
+        old_pw = self._old_pw_entry.get().strip()
+        new_pw = self._new_pw_entry.get().strip()
+        if not old_pw or not new_pw:
+            CTkMessagebox(
+                title="Atenção", message="Preencha ambos os campos de senha.", icon="warning")
+            return
+        if len(new_pw) < 4:
+            CTkMessagebox(
+                title="Senha Fraca", message="A nova senha deve ter pelo menos 4 caracteres.", icon="warning")
+            return
+        uid = self.app.current_user["id"]
+        success = self.db.update_user_password(uid, old_pw, new_pw)
+        if success:
+            self._old_pw_entry.delete(0, "end")
+            self._new_pw_entry.delete(0, "end")
+            CTkMessagebox(title="Sucesso ✅",
+                          message="Senha alterada com sucesso!", icon="check")
+        else:
+            CTkMessagebox(
+                title="Erro", message="Senha atual incorreta.", icon="cancel")
 
     # ── Atualização de conteúdo ──────────────────────────────
     def _force_update(self):

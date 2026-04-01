@@ -1,7 +1,13 @@
 import customtkinter as ctk
 from datetime import datetime
-import winsound
+import platform
 import threading
+
+# Guard: winsound só existe no Windows
+if platform.system() == "Windows":
+    import winsound
+else:
+    winsound = None
 
 
 class PomodoroView(ctk.CTkFrame):
@@ -95,6 +101,14 @@ class PomodoroView(ctk.CTkFrame):
         )
         self.reset_btn.grid(row=0, column=2, padx=5)
 
+        self.skip_btn = ctk.CTkButton(
+            btn_frame, text="⏭  Pular", width=120, height=44,
+            font=ctk.CTkFont(size=15),
+            command=self._skip_break,
+        )
+        self.skip_btn.grid(row=0, column=3, padx=5)
+        self.skip_btn.grid_remove()  # Inicialmente oculto
+
         # Tarefa vinculada
         task_frame = ctk.CTkFrame(center, fg_color="transparent")
         task_frame.pack(pady=(15, 5))
@@ -151,6 +165,8 @@ class PomodoroView(ctk.CTkFrame):
         self.start_btn.configure(state="normal", text="▶  Iniciar")
         self.pause_btn.configure(state="disabled")
         self.progress.set(1.0)
+        # Restaurar título da janela
+        self.app.title("🔀 Switch Focus – Estude com Foco!")
 
     def _tick(self):
         if not self._running:
@@ -193,9 +209,16 @@ class PomodoroView(ctk.CTkFrame):
                 self.db.check_and_grant_achievements(uid)
                 self.app.refresh_xp_sidebar()
 
-        # Notificação sonora em thread separada
-        threading.Thread(target=lambda: winsound.Beep(
-            800, 600), daemon=True).start()
+        # Notificação sonora em thread separada (cross-platform)
+        def _beep():
+            if winsound:
+                winsound.Beep(800, 600)
+            else:
+                print("\a")  # Fallback: terminal bell
+        threading.Thread(target=_beep, daemon=True).start()
+
+        # Restaurar título da janela
+        self.app.title("🔀 Switch Focus – Estude com Foco!")
 
         # Auto-switch
         if self._session_type == "foco":
@@ -212,8 +235,12 @@ class PomodoroView(ctk.CTkFrame):
         self._session_type = stype
         self._load_durations()
         self._seconds_left = self._get_duration() * 60
-        labels = {"foco": "Sessão de Foco",
-                  "pausa_curta": "Pausa Curta", "pausa_longa": "Pausa Longa"}
+        t = self.app.theme_mgr.get_theme()
+        labels = {
+            "foco": t.get("focus_label", "Sessão de Foco"),
+            "pausa_curta": t.get("short_break_label", "Pausa Curta"),
+            "pausa_longa": t.get("long_break_label", "Pausa Longa"),
+        }
         self.session_label.configure(text=labels.get(stype, stype))
         self._update_display()
         self.progress.set(1.0)
@@ -221,6 +248,12 @@ class PomodoroView(ctk.CTkFrame):
         self.pause_btn.configure(state="disabled")
         self._running = False
         self._started_at = None
+        # Mostrar botão Pular apenas durante pausas
+        if hasattr(self, "skip_btn"):
+            if stype in ("pausa_curta", "pausa_longa"):
+                self.skip_btn.grid()
+            else:
+                self.skip_btn.grid_remove()
 
     def _get_duration(self):
         return {"foco": self._focus_min, "pausa_curta": self._short_min, "pausa_longa": self._long_min}.get(
@@ -236,8 +269,15 @@ class PomodoroView(ctk.CTkFrame):
 
     def _update_display(self):
         m, s = divmod(self._seconds_left, 60)
-        self.time_label.configure(text=f"{m:02d}:{s:02d}")
+        time_str = f"{m:02d}:{s:02d}"
+        self.time_label.configure(text=time_str)
         self.counter_label.configure(text=f"Sessão {self._sessions_done}/4")
+        # Mostrar timer no título da janela
+        if self._running:
+            stype_names = {"foco": "Foco", "pausa_curta": "Pausa",
+                           "pausa_longa": "Pausa Longa"}
+            sname = stype_names.get(self._session_type, "")
+            self.app.title(f"⏱ {time_str} — {sname} | Switch Focus")
 
     # ── seleção de tarefa ────────────────────────────────────
     def _pick_task(self):
@@ -273,13 +313,47 @@ class PomodoroView(ctk.CTkFrame):
         self.task_label.configure(text=f"📋 Tarefa: {task['title']}")
         win.destroy()
 
+    def _skip_break(self):
+        """Pula a pausa e volta direto ao foco."""
+        if self._session_type in ("pausa_curta", "pausa_longa"):
+            self._running = False
+            if self._timer_id:
+                self.after_cancel(self._timer_id)
+            self._set_type("foco")
+
     # ── on_show ──────────────────────────────────────────────
     def on_show(self):
         self._load_durations()
         self._update_display()
+        # Atalho de teclado: Space para iniciar/pausar
+        self.app.bind("<space>", self._on_space_key)
 
-    # ── tema ─────────────────────────────────────────────────
+    def _on_space_key(self, event=None):
+        """Atalho: Espaço para iniciar/pausar o timer."""
+        # Verificar se o Pomodoro está visível
+        if not self.winfo_ismapped():
+            return
+        if self._running:
+            self._pause()
+        else:
+            self._start()
+
+    # ── tema ─────────────────────────────────────────────────────
+    def _update_themed_header(self):
+        t = self.app.theme_mgr.get_theme()
+        self.header.configure(text=t.get("timer_title", "🍅 Pomodoro Timer"))
+        # Atualizar labels da sessão atual
+        if hasattr(self, "session_label"):
+            labels = {
+                "foco": t.get("focus_label", "Sessão de Foco"),
+                "pausa_curta": t.get("short_break_label", "Pausa Curta"),
+                "pausa_longa": t.get("long_break_label", "Pausa Longa"),
+            }
+            self.session_label.configure(text=labels.get(
+                self._session_type, self._session_type))
+
     def apply_theme(self, t):
+        self._update_themed_header()
         self.configure(fg_color=t["bg"])
         self.header.configure(text_color=t["primary"])
         self.timer_card.configure(fg_color=t["card"])
@@ -295,3 +369,6 @@ class PomodoroView(ctk.CTkFrame):
         self.task_label.configure(text_color=t["text_sec"])
         self.pick_task_btn.configure(
             fg_color=t["button"], hover_color=t["button_hover"])
+        if hasattr(self, "skip_btn"):
+            self.skip_btn.configure(
+                fg_color=t["accent"], hover_color=t["button_hover"], text_color="#000")

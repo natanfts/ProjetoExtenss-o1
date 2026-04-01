@@ -1,5 +1,5 @@
 import customtkinter as ctk
-from datetime import datetime
+from datetime import datetime, timedelta
 
 
 class DashboardView(ctk.CTkFrame):
@@ -49,12 +49,16 @@ class DashboardView(ctk.CTkFrame):
             greeting = "Boa noite"
         name = self.app.current_user.get("display_name", "Estudante")
 
+        # Saudação temática
+        greeting_template = t.get("greeting", "👋 {saudacao}, {nome}!")
+        greeting_text = greeting_template.format(saudacao=greeting, nome=name)
+
         greeting_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
         greeting_frame.pack(fill="x", pady=(10, 15))
 
         ctk.CTkLabel(
             greeting_frame,
-            text=f"👋 {greeting}, {name}!",
+            text=greeting_text,
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=t["text"],
         ).pack(anchor="w")
@@ -81,16 +85,19 @@ class DashboardView(ctk.CTkFrame):
         level_frame = ctk.CTkFrame(xp_inner, fg_color="transparent")
         level_frame.pack(fill="x")
 
+        level_prefix = t.get("level_prefix", "Nível")
         ctk.CTkLabel(
             level_frame,
-            text=f"⭐ Nível {xp_info['level']}",
+            text=f"⭐ {level_prefix} {xp_info['level']}",
             font=ctk.CTkFont(size=20, weight="bold"),
             text_color=t["accent"],
         ).pack(side="left")
 
+        streak_msg = t.get("streak_msg", "🔥 {dias} dias seguidos!").format(
+            dias=streak_info['streak'])
         ctk.CTkLabel(
             level_frame,
-            text=f"🔥 {streak_info['streak']} dias seguidos",
+            text=streak_msg,
             font=ctk.CTkFont(size=16, weight="bold"),
             text_color=t["danger"] if streak_info["streak"] >= 7 else t["warning"],
         ).pack(side="right")
@@ -104,9 +111,10 @@ class DashboardView(ctk.CTkFrame):
         xp_bar.configure(progress_color=t["accent"], fg_color=t["secondary"])
         xp_bar.pack(fill="x")
 
+        xp_name = t.get("xp_name", "XP")
         ctk.CTkLabel(
             xp_inner,
-            text=f"{xp_info['xp']} / {xp_info['xp_next_level']} XP  •  Recorde de streak: {streak_info['longest']} dias",
+            text=f"{xp_info['xp']} / {xp_info['xp_next_level']} {xp_name}  •  Recorde de streak: {streak_info['longest']} dias",
             font=ctk.CTkFont(size=11),
             text_color=t["text_sec"],
         ).pack(anchor="w", pady=(2, 0))
@@ -173,9 +181,11 @@ class DashboardView(ctk.CTkFrame):
             bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
         if goals_summary["all_done"]:
+            celebration = t.get(
+                "celebration", "Parabéns! Todas as metas de hoje foram cumpridas!")
             ctk.CTkLabel(
                 self.scroll,
-                text="🎉 Parabéns! Todas as metas de hoje foram cumpridas!",
+                text=f"🎉 {celebration}",
                 font=ctk.CTkFont(size=14, weight="bold"),
                 text_color=t["success"],
             ).pack(anchor="w", pady=(8, 0))
@@ -238,9 +248,12 @@ class DashboardView(ctk.CTkFrame):
                 inner = ctk.CTkFrame(new_card, fg_color="transparent")
                 inner.pack(fill="x", padx=15, pady=10)
 
+                ach_msg = t.get("new_achievement",
+                                "🎉 NOVA CONQUISTA: {emoji} {title}")
                 ctk.CTkLabel(
                     inner,
-                    text=f"🎉 NOVA CONQUISTA: {ach['emoji']} {ach['title']}",
+                    text=ach_msg.format(
+                        emoji=ach['emoji'], title=ach['title']),
                     font=ctk.CTkFont(size=15, weight="bold"),
                     text_color=t["bg"],
                 ).pack(anchor="w")
@@ -294,7 +307,72 @@ class DashboardView(ctk.CTkFrame):
                     font=ctk.CTkFont(size=9),
                     text_color=t["success"],
                 ).pack()
+        # ── Mini-Gráfico Semanal ─────────────────────────────
+        ctk.CTkLabel(
+            self.scroll, text="📈 Atividade Semanal",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=t["primary"],
+        ).pack(anchor="w", pady=(18, 8))
 
+        chart_card = ctk.CTkFrame(
+            self.scroll, corner_radius=12, fg_color=t["card"])
+        chart_card.pack(fill="x", pady=5)
+        chart_inner = ctk.CTkFrame(chart_card, fg_color="transparent")
+        chart_inner.pack(fill="x", padx=20, pady=15)
+
+        sessions = self.db.get_sessions(uid, limit=200)
+        today = datetime.now().date()
+        day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+        counts = {}
+        for i in range(6, -1, -1):
+            d = today - timedelta(days=i)
+            counts[d.isoformat()] = 0
+
+        for s in sessions:
+            completed = s.get("completed_at", "")
+            if completed:
+                date_str = completed[:10]
+                if date_str in counts:
+                    counts[date_str] += 1
+
+        max_count = max(counts.values()) if counts.values() else 1
+        if max_count == 0:
+            max_count = 1
+
+        bars_frame = ctk.CTkFrame(
+            chart_inner, fg_color="transparent", height=80)
+        bars_frame.pack(fill="x")
+        bars_frame.pack_propagate(False)
+        for i in range(7):
+            bars_frame.grid_columnconfigure(i, weight=1)
+
+        for i, (date_key, count) in enumerate(counts.items()):
+            d = datetime.fromisoformat(date_key).date()
+            day_label = day_names[d.weekday()]
+            is_today = d == today
+
+            col_frame = ctk.CTkFrame(bars_frame, fg_color="transparent")
+            col_frame.grid(row=0, column=i, sticky="nsew", padx=2)
+            col_frame.grid_rowconfigure(0, weight=1)
+
+            ctk.CTkLabel(col_frame, text=str(count),
+                         font=ctk.CTkFont(size=10, weight="bold"),
+                         text_color=t["primary"] if count > 0 else t["text_sec"],
+                         ).pack(side="top", pady=(0, 1))
+
+            bar_height = max(int(40 * count / max_count), 3)
+            bar_color = t["success"] if is_today and count > 0 else t["primary"] if count > 0 else t["secondary"]
+
+            bar = ctk.CTkFrame(col_frame, fg_color=bar_color,
+                               corner_radius=3, height=bar_height, width=24)
+            bar.pack(side="bottom", pady=(0, 0))
+            bar.pack_propagate(False)
+
+            ctk.CTkLabel(col_frame, text=day_label,
+                         font=ctk.CTkFont(
+                             size=9, weight="bold" if is_today else "normal"),
+                         text_color=t["success"] if is_today else t["text_sec"],
+                         ).pack(side="bottom", pady=(1, 0))
         # ── Ações Rápidas ────────────────────────────────────
         ctk.CTkLabel(
             self.scroll, text="⚡ Ações Rápidas",
@@ -323,9 +401,10 @@ class DashboardView(ctk.CTkFrame):
 
     def _show_guest_message(self, t):
         """Mostra mensagem para convidados."""
+        welcome_msg = t.get("welcome", "👋 Bem-vindo ao Switch Focus!")
         ctk.CTkLabel(
             self.scroll,
-            text="👋 Bem-vindo ao PomodoroStudy!",
+            text=welcome_msg,
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=t["primary"],
         ).pack(pady=(40, 10))
