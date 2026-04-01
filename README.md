@@ -143,13 +143,13 @@ git clone https://github.com/natanfts/ProjetoExtenss-o1.git
 cd ProjetoExtenss-o1
 
 # 2. Crie e ative o ambiente virtual
-python -m venv env
+python -m venv .venv
 
 # Windows
-env\Scripts\activate
+.venv\Scripts\activate
 
 # Linux/macOS
-source env/bin/activate
+source .venv/bin/activate
 
 # 3. Instale as dependências
 pip install -r requirements.txt
