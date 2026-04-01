@@ -1,4 +1,4 @@
-# 🍅 PomodoroStudy — Estude com Foco!
+# 🔀 Switch Focus — Estude com Foco!
 
 > Aplicativo desktop de estudos com timer Pomodoro, quizzes do ENEM, flashcards com repetição espaçada, shorts educativos do YouTube e gamificação — tudo com temas de anime!
 
@@ -11,7 +11,7 @@
 
 ## 📋 Sobre o Projeto
 
-O **PomodoroStudy** é um aplicativo de estudos completo desenvolvido em Python com interface gráfica moderna usando CustomTkinter. Foi criado como projeto de extensão universitária com foco em ajudar estudantes a se prepararem para o **ENEM** e **concursos** de forma produtiva e engajante.
+O **Switch Focus** é um aplicativo de estudos completo desenvolvido em Python com interface gráfica moderna usando CustomTkinter. Foi criado como projeto de extensão universitária com foco em ajudar estudantes a se prepararem para o **ENEM** e **concursos** de forma produtiva e engajante.
 
 O app combina técnicas comprovadas de estudo (Pomodoro, repetição espaçada, quizzes) com elementos de gamificação e temas visuais de animes populares para tornar a experiência de estudo mais motivadora.
 
@@ -105,7 +105,7 @@ O app combina técnicas comprovadas de estudo (Pomodoro, repetição espaçada, 
 ## 🏗️ Estrutura do Projeto
 
 ```
-PomodoroStudy/
+SwitchFocus/
 ├── main.py                 # Ponto de entrada da aplicação
 ├── database.py             # Gerenciamento do banco SQLite (14+ tabelas)
 ├── api_service.py          # Integrações externas (ENEM API, YouTube)
@@ -113,7 +113,7 @@ PomodoroStudy/
 ├── enem_content.py         # Banco expandido de questões e flashcards ENEM
 ├── themes.py               # 10 temas visuais com paletas de cores
 ├── requirements.txt        # Dependências do projeto
-├── pomodoro_study.db       # Banco de dados SQLite (gerado automaticamente)
+├── switch_focus.db         # Banco de dados SQLite (gerado automaticamente)
 └── views/
     ├── app.py              # Shell principal (sidebar + navegação)
     ├── dashboard_view.py   # Dashboard com estatísticas e metas
@@ -143,13 +143,13 @@ git clone https://github.com/natanfts/ProjetoExtenss-o1.git
 cd ProjetoExtenss-o1
 
 # 2. Crie e ative o ambiente virtual
-python -m venv .venv
+python -m venv env
 
 # Windows
-.venv\Scripts\activate
+env\Scripts\activate
 
 # Linux/macOS
-source .venv/bin/activate
+source env/bin/activate
 
 # 3. Instale as dependências
 pip install -r requirements.txt

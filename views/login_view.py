@@ -94,6 +94,13 @@ class LoginView(ctk.CTkFrame):
                           message="Preencha todos os campos.", icon="warning")
             return
 
+        if self._mode == "register":
+            # Validação de força da senha
+            if len(password) < 4:
+                CTkMessagebox(title="Senha Fraca",
+                              message="A senha deve ter pelo menos 4 caracteres.", icon="warning")
+                return
+
         if self._mode == "login":
             user = self.db.authenticate(username, password)
             if user:
@@ -120,6 +127,12 @@ class LoginView(ctk.CTkFrame):
         self.username_entry.delete(0, "end")
         self.password_entry.delete(0, "end")
         self.name_entry.delete(0, "end")
+
+    def on_show(self):
+        """Reset campos e estado ao exibir a view."""
+        self._clear()
+        if self._mode == "register":
+            self._toggle_mode()  # Voltar ao modo login
 
     def apply_theme(self, t):
         self.configure(fg_color=t["bg"])

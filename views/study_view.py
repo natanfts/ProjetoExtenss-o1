@@ -3,6 +3,7 @@ import json
 import webbrowser
 import threading
 from api_service import APIService
+from enem_syllabus import ENEM_SYLLABUS, get_topics_by_area, get_topic, search_topics
 
 
 class StudyView(ctk.CTkFrame):
@@ -41,6 +42,7 @@ class StudyView(ctk.CTkFrame):
             font=ctk.CTkFont(size=24, weight="bold"),
         )
         self.header.grid(row=0, column=0, pady=(20, 10), padx=25, sticky="w")
+        self._update_themed_header()
 
         # Conteúdo principal
         self.main_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -67,6 +69,7 @@ class StudyView(ctk.CTkFrame):
         tab_items = [
             ("enem_real", "🎯 ENEM Real"),
             ("enem", "📝 Quiz ENEM"),
+            ("teoria", "📖 Teoria"),
             ("concursos", "📑 Concursos"),
             ("videos", "🎬 Vídeos"),
             ("pesquisar", "🔍 Pesquisar"),
@@ -85,6 +88,8 @@ class StudyView(ctk.CTkFrame):
 
         if self._category == "enem_real":
             self._show_enem_real_menu()
+        elif self._category == "teoria":
+            self._show_theory_areas()
         elif self._category == "pesquisar":
             self._show_search()
         elif self._category == "videos":
@@ -113,63 +118,95 @@ class StudyView(ctk.CTkFrame):
 
         ctk.CTkLabel(
             scroll,
-            text="Questões reais das provas do ENEM de 2009 a 2023.\n"
+            text="Questões reais das provas do ENEM de 2009 a 2025.\n"
                  "Selecione o ano desejado para começar. As questões são baixadas da API oficial e salvas localmente.",
             font=ctk.CTkFont(size=13),
             text_color=t["text_sec"],
             justify="left", wraplength=700,
         ).pack(anchor="w", pady=(0, 15))
 
+        # Temas de redação do ENEM por ano
+        enem_redacao = {
+            2025: "Aguardando divulgação",
+            2024: "Desafios para a valorização da herança africana no Brasil",
+            2023: "Desafios para o enfrentamento da invisibilidade do trabalho de cuidado realizado pela mulher no Brasil",
+            2022: "Desafios para a valorização de comunidades e povos tradicionais no Brasil",
+            2021: "Invisibilidade e registro civil: garantia de acesso à cidadania no Brasil",
+            2020: "O estigma associado às doenças mentais na sociedade brasileira",
+            2019: "Democratização do acesso ao cinema no Brasil",
+            2018: "Manipulação do comportamento do usuário pelo controle de dados na internet",
+            2017: "Desafios para a formação educacional de surdos no Brasil",
+            2016: "Caminhos para combater a intolerância religiosa no Brasil",
+            2015: "A persistência da violência contra a mulher na sociedade brasileira",
+            2014: "Publicidade infantil em questão no Brasil",
+            2013: "Efeitos da implantação da Lei Seca no Brasil",
+            2012: "O movimento imigratório para o Brasil no século XXI",
+            2011: "Viver em rede no século XXI: os limites entre o público e o privado",
+            2010: "O trabalho na construção da dignidade humana",
+            2009: "O indivíduo frente à ética nacional",
+        }
+
         # Grid de anos
         cached_years = self.db.get_cached_enem_years()
 
-        years_frame = ctk.CTkFrame(scroll, fg_color="transparent")
-        years_frame.pack(fill="x", pady=5)
-
-        row_frame = None
-        for i, year in enumerate(range(2023, 2008, -1)):
-            if i % 5 == 0:
-                row_frame = ctk.CTkFrame(years_frame, fg_color="transparent")
-                row_frame.pack(fill="x", pady=4)
-
+        for year in range(2025, 2008, -1):
             is_cached = year in cached_years
             cached_count = self.db.get_cached_enem_year_count(
                 year) if is_cached else 0
+            redacao = enem_redacao.get(year, "")
 
             card = ctk.CTkFrame(
-                row_frame, corner_radius=12,
-                fg_color=t["card"], height=100, width=140,
+                scroll, corner_radius=12,
+                fg_color=t["card"],
             )
-            card.pack(side="left", fill="x", expand=True, padx=4)
-            card.pack_propagate(False)
+            card.pack(fill="x", pady=4, padx=4)
+
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=15, pady=12)
+            inner.grid_columnconfigure(1, weight=1)
+
+            # Coluna esquerda: ano + status
+            left = ctk.CTkFrame(inner, fg_color="transparent")
+            left.grid(row=0, column=0, sticky="w")
 
             ctk.CTkLabel(
-                card, text=f"📋 {year}",
+                left, text=f"📋 {year}",
                 font=ctk.CTkFont(size=18, weight="bold"),
                 text_color=t["text"],
-            ).pack(pady=(12, 2))
+            ).pack(anchor="w")
 
             if is_cached:
                 ctk.CTkLabel(
-                    card, text=f"✅ {cached_count} questões",
-                    font=ctk.CTkFont(size=10),
+                    left, text=f"✅ {cached_count} questões",
+                    font=ctk.CTkFont(size=11),
                     text_color=t["success"],
-                ).pack(pady=(0, 4))
+                ).pack(anchor="w")
             else:
                 ctk.CTkLabel(
-                    card, text="📥 Baixar",
-                    font=ctk.CTkFont(size=10),
+                    left, text="📥 Disponível para download",
+                    font=ctk.CTkFont(size=11),
                     text_color=t["text_sec"],
-                ).pack(pady=(0, 4))
+                ).pack(anchor="w")
 
+            # Coluna central: tema da redação
+            if redacao:
+                ctk.CTkLabel(
+                    inner,
+                    text=f"✍️ Redação: {redacao}",
+                    font=ctk.CTkFont(size=12),
+                    text_color=t["text_sec"],
+                    wraplength=450, justify="left",
+                ).grid(row=0, column=1, sticky="w", padx=15)
+
+            # Coluna direita: botão
             ctk.CTkButton(
-                card, text="Iniciar" if is_cached else "Baixar",
-                width=90, height=26,
-                font=ctk.CTkFont(size=11),
+                inner, text="Iniciar" if is_cached else "Baixar",
+                width=90, height=30,
+                font=ctk.CTkFont(size=12),
                 fg_color=t["primary"] if is_cached else t["accent"],
                 hover_color=t["button_hover"],
                 command=lambda y=year: self._select_enem_year(y),
-            ).pack(pady=(0, 8))
+            ).grid(row=0, column=2, sticky="e", padx=(10, 0))
 
         # Estatísticas do usuário
         stats = self.db.get_enem_quiz_stats_by_year(self.app.get_user_id())
@@ -1164,6 +1201,539 @@ class StudyView(ctk.CTkFrame):
             self._subject = "Questões Online"
             self._show_question()
 
+    # ══════════════════════════════════════════════════════════
+    # ── TEORIA — Áreas do ENEM ───────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    def _show_theory_areas(self):
+        """Mostra as 4 grandes áreas do ENEM para estudo teórico."""
+        t = self.app.theme_mgr.get_theme()
+        progress = self.db.get_theory_progress(self.app.get_user_id())
+
+        scroll = ctk.CTkScrollableFrame(
+            self.main_frame, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nswe")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            scroll,
+            text="📖 Estudo Teórico — Conteúdos do ENEM",
+            font=ctk.CTkFont(size=20, weight="bold"),
+            text_color=t["primary"],
+        ).pack(anchor="w", pady=(10, 5))
+
+        ctk.CTkLabel(
+            scroll,
+            text="Estude a teoria dos conteúdos cobrados no ENEM.\n"
+                 "Cada tópico contém resumo, conceitos-chave, fórmulas, dicas e acesso à Wikipedia.",
+            font=ctk.CTkFont(size=13),
+            text_color=t["text_sec"],
+            justify="left", wraplength=700,
+        ).pack(anchor="w", pady=(0, 15))
+
+        # Barra de pesquisa rápida
+        search_frame = ctk.CTkFrame(scroll, fg_color="transparent")
+        search_frame.pack(fill="x", pady=(0, 15))
+
+        self._theory_search_var = ctk.StringVar()
+        ctk.CTkEntry(
+            search_frame, textvariable=self._theory_search_var,
+            placeholder_text="🔍 Buscar tópico (ex: 'cinética', 'revolução')...",
+            height=38, font=ctk.CTkFont(size=13), width=400,
+        ).pack(side="left", fill="x", expand=True, padx=(0, 8))
+
+        ctk.CTkButton(
+            search_frame, text="Buscar", width=90, height=38,
+            fg_color=t["primary"], hover_color=t["button_hover"],
+            command=self._theory_search,
+        ).pack(side="left")
+
+        # Cards de áreas
+        for area_key, area_data in ENEM_SYLLABUS.items():
+            topics = area_data["topics"]
+            read_count = sum(
+                1 for tp in topics
+                if (area_key, tp["title"]) in progress and progress[(area_key, tp["title"])]["completed"]
+            )
+            total = len(topics)
+            pct = int(read_count / total * 100) if total else 0
+
+            card = ctk.CTkFrame(scroll, corner_radius=14, fg_color=t["card"])
+            card.pack(fill="x", pady=6, padx=4)
+
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=20, pady=15)
+
+            # Título da área
+            ctk.CTkLabel(
+                inner,
+                text=f"{area_data['emoji']} {area_key}",
+                font=ctk.CTkFont(size=17, weight="bold"),
+                text_color=t["text"],
+            ).pack(anchor="w")
+
+            ctk.CTkLabel(
+                inner,
+                text=area_data["description"],
+                font=ctk.CTkFont(size=12),
+                text_color=t["text_sec"],
+                wraplength=600, justify="left",
+            ).pack(anchor="w", pady=(2, 8))
+
+            # Barra de progresso
+            prog_frame = ctk.CTkFrame(inner, fg_color="transparent")
+            prog_frame.pack(fill="x", pady=(0, 8))
+
+            ctk.CTkProgressBar(
+                prog_frame, progress_color=t["success"],
+                fg_color=t["secondary"], height=8, width=300,
+            ).pack(side="left", padx=(0, 10))
+            # Atualizar o valor após criar
+            for child in prog_frame.winfo_children():
+                if isinstance(child, ctk.CTkProgressBar):
+                    child.set(pct / 100)
+
+            ctk.CTkLabel(
+                prog_frame,
+                text=f"{read_count}/{total} tópicos ({pct}%)",
+                font=ctk.CTkFont(size=12),
+                text_color=t["success"] if pct == 100 else t["text_sec"],
+            ).pack(side="left")
+
+            ctk.CTkButton(
+                inner, text=f"📖 Estudar ({total} tópicos)",
+                width=180, height=34,
+                fg_color=t["primary"], hover_color=t["button_hover"],
+                font=ctk.CTkFont(size=13, weight="bold"),
+                command=lambda a=area_key: self._show_theory_topics(a),
+            ).pack(anchor="e")
+
+        # Estatísticas gerais
+        stats = self.db.get_theory_stats(self.app.get_user_id())
+        if stats:
+            ctk.CTkLabel(
+                scroll, text="📊 Seu Progresso Geral",
+                font=ctk.CTkFont(size=18, weight="bold"),
+                text_color=t["primary"],
+            ).pack(anchor="w", pady=(25, 10))
+
+            total_read = sum(s["completed"] for s in stats.values())
+            ctk.CTkLabel(
+                scroll,
+                text=f"✅ {total_read} tópicos concluídos no total",
+                font=ctk.CTkFont(size=14),
+                text_color=t["success"],
+            ).pack(anchor="w")
+
+    def _theory_search(self):
+        """Busca tópicos pelo termo digitado."""
+        term = self._theory_search_var.get().strip()
+        if not term:
+            return
+        results = search_topics(term)
+        if not results:
+            from CTkMessagebox import CTkMessagebox
+            CTkMessagebox(title="Busca", message=f"Nenhum tópico encontrado para '{term}'.",
+                          icon="info")
+            return
+        self._show_theory_search_results(results, term)
+
+    def _show_theory_search_results(self, results, term):
+        """Mostra resultados da busca de tópicos."""
+        for w in self.main_frame.winfo_children():
+            w.destroy()
+
+        t = self.app.theme_mgr.get_theme()
+        progress = self.db.get_theory_progress(self.app.get_user_id())
+
+        top = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        ctk.CTkButton(
+            top, text="← Voltar", width=90, height=32,
+            fg_color=t["card"], hover_color=t["secondary"],
+            command=self._show_menu,
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            top, text=f"🔍 Resultados para '{term}' — {len(results)} encontrados",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=t["primary"],
+        ).pack(side="left", padx=15)
+
+        scroll = ctk.CTkScrollableFrame(
+            self.main_frame, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nswe")
+
+        for area_key, topic in results:
+            is_read = (area_key, topic["title"]) in progress and \
+                progress[(area_key, topic["title"])]["completed"]
+
+            card = ctk.CTkFrame(scroll, corner_radius=12, fg_color=t["card"])
+            card.pack(fill="x", pady=4, padx=4)
+
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=15, pady=12)
+
+            status = "✅" if is_read else "📄"
+            area_emoji = ENEM_SYLLABUS[area_key]["emoji"]
+            diff_colors = {"fácil": t["success"],
+                           "médio": t["warning"], "difícil": t["danger"]}
+
+            ctk.CTkLabel(
+                inner,
+                text=f"{status} {topic['title']}",
+                font=ctk.CTkFont(size=15, weight="bold"),
+                text_color=t["text"],
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                inner,
+                text=f"{area_emoji} {area_key}  •  {topic['difficulty']}",
+                font=ctk.CTkFont(size=12),
+                text_color=diff_colors.get(topic["difficulty"], t["text_sec"]),
+            ).pack(side="left", padx=15)
+
+            ctk.CTkButton(
+                inner, text="📖 Estudar", width=100, height=30,
+                fg_color=t["primary"], hover_color=t["button_hover"],
+                command=lambda a=area_key, tp=topic["title"]: self._show_theory_content(
+                    a, tp),
+            ).pack(side="right")
+
+    # ══════════════════════════════════════════════════════════
+    # ── TEORIA — Lista de Tópicos de uma Área ────────────────
+    # ══════════════════════════════════════════════════════════
+    def _show_theory_topics(self, area_key: str):
+        """Mostra todos os tópicos de uma área específica."""
+        for w in self.main_frame.winfo_children():
+            w.destroy()
+
+        t = self.app.theme_mgr.get_theme()
+        area_data = ENEM_SYLLABUS.get(area_key)
+        if not area_data:
+            return
+
+        progress = self.db.get_theory_progress(self.app.get_user_id())
+        topics = area_data["topics"]
+
+        # Header
+        top = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        ctk.CTkButton(
+            top, text="← Voltar", width=90, height=32,
+            fg_color=t["card"], hover_color=t["secondary"],
+            command=self._show_menu,
+        ).pack(side="left")
+
+        ctk.CTkLabel(
+            top, text=f"{area_data['emoji']} {area_key}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=t["primary"],
+        ).pack(side="left", padx=15)
+
+        read_count = sum(
+            1 for tp in topics
+            if (area_key, tp["title"]) in progress and progress[(area_key, tp["title"])]["completed"]
+        )
+        ctk.CTkLabel(
+            top, text=f"✅ {read_count}/{len(topics)} concluídos",
+            font=ctk.CTkFont(size=13),
+            text_color=t["success"],
+        ).pack(side="right")
+
+        scroll = ctk.CTkScrollableFrame(
+            self.main_frame, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nswe")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        diff_colors = {"fácil": t["success"],
+                       "médio": t["warning"], "difícil": t["danger"]}
+
+        for i, topic in enumerate(topics, 1):
+            is_read = (area_key, topic["title"]) in progress and \
+                progress[(area_key, topic["title"])]["completed"]
+
+            card = ctk.CTkFrame(scroll, corner_radius=12, fg_color=t["card"])
+            card.pack(fill="x", pady=4, padx=4)
+
+            inner = ctk.CTkFrame(card, fg_color="transparent")
+            inner.pack(fill="x", padx=15, pady=12)
+
+            # Status + número + título
+            status = "✅" if is_read else f"📄"
+            ctk.CTkLabel(
+                inner,
+                text=f"{status}  {i}. {topic['title']}",
+                font=ctk.CTkFont(size=15, weight="bold"),
+                text_color=t["text"] if not is_read else t["success"],
+            ).pack(side="left")
+
+            # Dificuldade
+            diff = topic.get("difficulty", "médio")
+            ctk.CTkLabel(
+                inner,
+                text=f"● {diff}",
+                font=ctk.CTkFont(size=11),
+                text_color=diff_colors.get(diff, t["text_sec"]),
+            ).pack(side="left", padx=15)
+
+            # Resumo curto
+            summary_short = topic["summary"][:80] + \
+                "..." if len(topic["summary"]) > 80 else topic["summary"]
+            ctk.CTkLabel(
+                inner,
+                text=summary_short,
+                font=ctk.CTkFont(size=11),
+                text_color=t["text_sec"],
+                wraplength=300,
+            ).pack(side="left", padx=10)
+
+            # Botão estudar
+            btn_text = "📖 Revisar" if is_read else "📖 Estudar"
+            ctk.CTkButton(
+                inner, text=btn_text, width=100, height=30,
+                fg_color=t["accent"] if is_read else t["primary"],
+                hover_color=t["button_hover"],
+                font=ctk.CTkFont(size=12),
+                command=lambda a=area_key, tp=topic["title"]: self._show_theory_content(
+                    a, tp),
+            ).pack(side="right")
+
+    # ══════════════════════════════════════════════════════════
+    # ── TEORIA — Conteúdo de um Tópico ───────────────────────
+    # ══════════════════════════════════════════════════════════
+    def _show_theory_content(self, area_key: str, topic_title: str):
+        """Mostra o conteúdo completo de um tópico teórico."""
+        for w in self.main_frame.winfo_children():
+            w.destroy()
+
+        t = self.app.theme_mgr.get_theme()
+        topic = get_topic(area_key, topic_title)
+        if not topic:
+            return
+
+        progress = self.db.get_theory_progress(self.app.get_user_id())
+        is_read = (area_key, topic_title) in progress and \
+            progress[(area_key, topic_title)]["completed"]
+
+        # Header
+        top = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        top.grid(row=0, column=0, sticky="ew", pady=(0, 10))
+
+        ctk.CTkButton(
+            top, text="← Voltar", width=90, height=32,
+            fg_color=t["card"], hover_color=t["secondary"],
+            command=lambda: self._show_theory_topics(area_key),
+        ).pack(side="left")
+
+        area_emoji = ENEM_SYLLABUS[area_key]["emoji"]
+        ctk.CTkLabel(
+            top, text=f"{area_emoji} {topic_title}",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=t["primary"],
+        ).pack(side="left", padx=15)
+
+        if is_read:
+            ctk.CTkLabel(
+                top, text="✅ Concluído",
+                font=ctk.CTkFont(size=13),
+                text_color=t["success"],
+            ).pack(side="right")
+
+        # Scroll do conteúdo
+        scroll = ctk.CTkScrollableFrame(
+            self.main_frame, fg_color="transparent")
+        scroll.grid(row=1, column=0, sticky="nswe")
+        scroll.grid_columnconfigure(0, weight=1)
+
+        diff_colors = {"fácil": t["success"],
+                       "médio": t["warning"], "difícil": t["danger"]}
+
+        # Badge de dificuldade
+        diff = topic.get("difficulty", "médio")
+        ctk.CTkLabel(
+            scroll,
+            text=f"● Dificuldade: {diff}",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=diff_colors.get(diff, t["text_sec"]),
+        ).pack(anchor="w", pady=(5, 10))
+
+        # ── Resumo ──
+        self._theory_section(scroll, t, "📝 Resumo", topic["summary"])
+
+        # ── Conceitos-chave ──
+        if topic.get("key_concepts"):
+            concepts_text = "\n".join(
+                f"  • {c}" for c in topic["key_concepts"])
+            self._theory_section(scroll, t, "🔑 Conceitos-Chave", concepts_text)
+
+        # ── Fórmulas ──
+        if topic.get("formulas"):
+            formulas_text = "\n".join(f"  📐 {f}" for f in topic["formulas"])
+            self._theory_section(
+                scroll, t, "📐 Fórmulas Importantes", formulas_text)
+
+        # ── Dicas ──
+        if topic.get("tips"):
+            tips_text = "\n".join(f"  💡 {tip}" for tip in topic["tips"])
+            self._theory_section(scroll, t, "💡 Dicas para o ENEM", tips_text)
+
+        # ── Tópicos Relacionados ──
+        if topic.get("related_topics"):
+            rel_text = ", ".join(topic["related_topics"])
+            self._theory_section(scroll, t, "🔗 Tópicos Relacionados", rel_text)
+
+        # ── Botão Wikipedia ──
+        wiki_frame = ctk.CTkFrame(scroll, corner_radius=12, fg_color=t["card"])
+        wiki_frame.pack(fill="x", pady=10, padx=4)
+        wiki_inner = ctk.CTkFrame(wiki_frame, fg_color="transparent")
+        wiki_inner.pack(fill="x", padx=15, pady=12)
+
+        ctk.CTkLabel(
+            wiki_inner,
+            text="🌐 Aprofundar na Wikipedia",
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=t["text"],
+        ).pack(anchor="w")
+
+        self._wiki_content_frame = ctk.CTkFrame(
+            wiki_frame, fg_color="transparent")
+        self._wiki_content_frame.pack(fill="x", padx=15, pady=(0, 12))
+
+        ctk.CTkButton(
+            wiki_inner, text="🔍 Buscar na Wikipedia", width=180, height=34,
+            fg_color=t["accent"], hover_color=t["button_hover"],
+            font=ctk.CTkFont(size=13),
+            command=lambda: self._fetch_wiki(
+                topic.get("wiki_query", topic_title)),
+        ).pack(anchor="e")
+
+        # ── Botões de ação ──
+        actions = ctk.CTkFrame(scroll, fg_color="transparent")
+        actions.pack(fill="x", pady=15)
+
+        if not is_read:
+            ctk.CTkButton(
+                actions,
+                text="✅ Marcar como Concluído (+15 XP)",
+                width=220, height=40,
+                fg_color=t["success"], hover_color="#388E3C",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                command=lambda: self._mark_theory_done(area_key, topic_title),
+            ).pack(side="left", padx=5)
+        else:
+            ctk.CTkLabel(
+                actions,
+                text="✅ Tópico já concluído!",
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color=t["success"],
+            ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            actions,
+            text="🎬 Videoaula no YouTube",
+            width=180, height=40,
+            fg_color=t["danger"], hover_color="#EF5350",
+            font=ctk.CTkFont(size=13),
+            command=lambda: webbrowser.open(
+                self.api.get_youtube_search_url(f"{topic_title} aula enem")),
+        ).pack(side="left", padx=5)
+
+    def _theory_section(self, parent, t, title, content):
+        """Cria uma seção de conteúdo teórico (card com título e texto)."""
+        card = ctk.CTkFrame(parent, corner_radius=12, fg_color=t["card"])
+        card.pack(fill="x", pady=5, padx=4)
+
+        ctk.CTkLabel(
+            card, text=title,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            text_color=t["primary"],
+        ).pack(anchor="w", padx=15, pady=(12, 4))
+
+        ctk.CTkLabel(
+            card, text=content,
+            font=ctk.CTkFont(size=13),
+            text_color=t["text"],
+            justify="left", wraplength=680,
+        ).pack(anchor="w", padx=15, pady=(0, 12))
+
+    def _fetch_wiki(self, query: str):
+        """Busca conteúdo da Wikipedia em thread separada."""
+        for w in self._wiki_content_frame.winfo_children():
+            w.destroy()
+
+        t = self.app.theme_mgr.get_theme()
+        loading = ctk.CTkLabel(
+            self._wiki_content_frame,
+            text="⏳ Buscando na Wikipedia...",
+            font=ctk.CTkFont(size=13),
+            text_color=t["text_sec"],
+        )
+        loading.pack(anchor="w", pady=5)
+
+        def _do_fetch():
+            result = self.api.fetch_wiki_summary(query)
+            self.after(0, lambda: self._show_wiki_result(result))
+
+        threading.Thread(target=_do_fetch, daemon=True).start()
+
+    def _show_wiki_result(self, result):
+        """Exibe resultado da Wikipedia."""
+        for w in self._wiki_content_frame.winfo_children():
+            w.destroy()
+
+        t = self.app.theme_mgr.get_theme()
+
+        if not result:
+            ctk.CTkLabel(
+                self._wiki_content_frame,
+                text="❌ Não foi possível encontrar informações na Wikipedia.",
+                font=ctk.CTkFont(size=13),
+                text_color=t["danger"],
+            ).pack(anchor="w", pady=5)
+            return
+
+        ctk.CTkLabel(
+            self._wiki_content_frame,
+            text=f"📖 {result['title']}",
+            font=ctk.CTkFont(size=14, weight="bold"),
+            text_color=t["text"],
+        ).pack(anchor="w", pady=(5, 3))
+
+        ctk.CTkLabel(
+            self._wiki_content_frame,
+            text=result["extract"],
+            font=ctk.CTkFont(size=13),
+            text_color=t["text_sec"],
+            justify="left", wraplength=650,
+        ).pack(anchor="w", pady=(0, 8))
+
+        if result.get("url"):
+            ctk.CTkButton(
+                self._wiki_content_frame,
+                text="🌐 Ler artigo completo na Wikipedia",
+                width=250, height=32,
+                fg_color=t["card"], hover_color=t["secondary"],
+                text_color=t["accent"],
+                font=ctk.CTkFont(size=12),
+                command=lambda: webbrowser.open(result["url"]),
+            ).pack(anchor="w")
+
+    def _mark_theory_done(self, area_key: str, topic_title: str):
+        """Marca tópico como concluído e atualiza a interface."""
+        self.db.mark_theory_read(self.app.get_user_id(), area_key, topic_title)
+        self.app.refresh_xp_sidebar()
+
+        from CTkMessagebox import CTkMessagebox
+        CTkMessagebox(
+            title="Tópico Concluído! 🎉",
+            message=f"Você concluiu o estudo de '{topic_title}'!\n+15 XP ganhos!",
+            icon="check",
+        )
+        # Recarrega a view do conteúdo atualizada
+        self._show_theory_content(area_key, topic_title)
+
     # ── utils ────────────────────────────────────────────────
     def _switch_category(self, cat):
         self._category = cat
@@ -1172,6 +1742,12 @@ class StudyView(ctk.CTkFrame):
     def on_show(self):
         self._show_menu()
 
+    def _update_themed_header(self):
+        t = self.app.theme_mgr.get_theme()
+        self.header.configure(text=t.get(
+            "study_title", "📚 Central de Estudos"))
+
     def apply_theme(self, t):
+        self._update_themed_header()
         self.configure(fg_color=t["bg"])
         self.header.configure(text_color=t["primary"])

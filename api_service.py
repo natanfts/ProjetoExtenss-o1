@@ -9,6 +9,28 @@ from youtubesearchpython import VideosSearch
 logger = logging.getLogger("APIService")
 
 
+def _retry_request(method, url, max_retries=3, backoff=1.5, **kwargs):
+    """Faz uma requisição HTTP com retry e backoff exponencial."""
+    last_error = None
+    for attempt in range(max_retries):
+        try:
+            resp = method(url, **kwargs)
+            resp.raise_for_status()
+            return resp
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                time.sleep(backoff * (2 ** attempt))
+        except requests.HTTPError as e:
+            if e.response and e.response.status_code >= 500:
+                last_error = e
+                if attempt < max_retries - 1:
+                    time.sleep(backoff * (2 ** attempt))
+            else:
+                raise
+    raise last_error
+
+
 class APIService:
     """Serviço de APIs externas: ENEM API + Open Trivia DB + YouTube Search."""
 
@@ -16,7 +38,7 @@ class APIService:
     ENEM_API_BASE = "https://api.enem.dev/v1"
 
     # Anos disponíveis na API enem.dev
-    ENEM_YEARS = list(range(2009, 2024))  # 2009 a 2023
+    ENEM_YEARS = list(range(2009, 2026))  # 2009 a 2025
 
     # Disciplinas do ENEM (valores retornados pela API)
     ENEM_DISCIPLINES = {
@@ -48,9 +70,9 @@ class APIService:
     def fetch_enem_exams(self) -> list[dict]:
         """Retorna lista de provas/anos disponíveis na API."""
         try:
-            resp = requests.get(
+            resp = _retry_request(
+                requests.get,
                 f"{self.ENEM_API_BASE}/exams", timeout=10)
-            resp.raise_for_status()
             data = resp.json()
             return data if isinstance(data, list) else data.get("exams", [])
         except Exception as e:
@@ -69,12 +91,12 @@ class APIService:
 
         try:
             while True:
-                resp = requests.get(
+                resp = _retry_request(
+                    requests.get,
                     f"{self.ENEM_API_BASE}/exams/{year}/questions",
                     params={"limit": min(limit, 50), "offset": current_offset},
                     timeout=15,
                 )
-                resp.raise_for_status()
                 data = resp.json()
 
                 questions = data.get("questions", [])
@@ -103,11 +125,11 @@ class APIService:
     def fetch_enem_question(self, year: int, index: int) -> dict | None:
         """Busca uma questão específica do ENEM por ano e índice."""
         try:
-            resp = requests.get(
+            resp = _retry_request(
+                requests.get,
                 f"{self.ENEM_API_BASE}/exams/{year}/questions/{index}",
                 timeout=10,
             )
-            resp.raise_for_status()
             return self._parse_enem_question(resp.json(), year)
         except Exception as e:
             logger.error("Erro ao buscar questão %d/%d: %s", year, index, e)
@@ -257,3 +279,45 @@ class APIService:
     def get_youtube_search_url(query: str) -> str:
         q = query.replace(" ", "+")
         return f"https://www.youtube.com/results?search_query={q}+aula+enem"
+
+    # ══════════════════════════════════════════════════════════
+    # ── WIKIPEDIA (Teoria) ───────────────────────────────────
+    # ══════════════════════════════════════════════════════════
+    @staticmethod
+    def fetch_wiki_summary(query: str) -> dict | None:
+        """
+        Busca resumo de um tópico na Wikipedia em português.
+        Retorna dict com: title, extract, thumbnail, url — ou None.
+        """
+        try:
+            url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + \
+                  requests.utils.quote(query)
+            resp = requests.get(url, timeout=8, headers={
+                "User-Agent": "SwitchFocusApp/1.0 (educational-project)"
+            })
+            if resp.status_code == 200:
+                data = resp.json()
+                return {
+                    "title": data.get("title", query),
+                    "extract": data.get("extract", ""),
+                    "thumbnail": data.get("thumbnail", {}).get("source", ""),
+                    "url": data.get("content_urls", {}).get("desktop", {}).get("page", ""),
+                }
+            # Se 404, tenta busca alternativa
+            if resp.status_code == 404:
+                search_url = "https://pt.wikipedia.org/w/api.php"
+                params = {
+                    "action": "query", "list": "search",
+                    "srsearch": query, "srlimit": 1,
+                    "format": "json",
+                }
+                sr = requests.get(search_url, params=params, timeout=8,
+                                  headers={"User-Agent": "SwitchFocusApp/1.0"})
+                if sr.status_code == 200:
+                    results = sr.json().get("query", {}).get("search", [])
+                    if results:
+                        return APIService.fetch_wiki_summary(results[0]["title"])
+            return None
+        except Exception as e:
+            logger.warning(f"Wikipedia fetch error: {e}")
+            return None

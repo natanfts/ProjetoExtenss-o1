@@ -8,7 +8,7 @@ class App(ctk.CTk):
     def __init__(self):
         super().__init__()
 
-        self.title("🍅 PomodoroStudy – Estude com Foco!")
+        self.title("🔀 Switch Focus – Estude com Foco!")
         self.geometry("1120x700")
         self.minsize(900, 600)
 
@@ -44,7 +44,7 @@ class App(ctk.CTk):
 
         # Logo / título
         self.logo_label = ctk.CTkLabel(
-            self.sidebar, text="🍅 PomodoroStudy",
+            self.sidebar, text="🔀 Switch Focus",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         self.logo_label.pack(pady=(25, 5))
@@ -139,19 +139,20 @@ class App(ctk.CTk):
         frame = self._frames.get(name)
         if frame is None:
             return
-        if self._active_frame == name:
-            return
+        # Permitir refresh mesmo se já é o frame ativo
+        already_active = self._active_frame == name
         self._active_frame = name
 
         # Highlight botão ativo
-        theme = self.theme_mgr.get_theme()
-        for k, btn in self._nav_buttons.items():
-            if k == name:
-                btn.configure(
-                    fg_color=theme["primary"], text_color=theme["text"])
-            else:
-                btn.configure(fg_color="transparent",
-                              text_color=theme["text_sec"])
+        if not already_active:
+            theme = self.theme_mgr.get_theme()
+            for k, btn in self._nav_buttons.items():
+                if k == name:
+                    btn.configure(
+                        fg_color=theme["primary"], text_color=theme["text"])
+                else:
+                    btn.configure(fg_color="transparent",
+                                  text_color=theme["text_sec"])
 
         # Atualizar conteúdo se o frame tiver refresh
         if hasattr(frame, "on_show"):
@@ -205,8 +206,10 @@ class App(ctk.CTk):
             # XP info na sidebar
             xp_info = self.db.get_xp_info(user_dict["id"])
             streak = self.db.get_streak(user_dict["id"])
+            t = self.theme_mgr.get_theme()
+            lp = t.get("level_prefix", "Nv.")
             self.xp_sidebar_label.configure(
-                text=f"⭐ Nv.{xp_info['level']}  •  🔥 {streak['streak']} dias"
+                text=f"⭐ {lp}{xp_info['level']}  •  🔥 {streak['streak']} dias"
             )
         else:
             self.user_label.configure(text="👤 Convidado")
@@ -225,8 +228,10 @@ class App(ctk.CTk):
         if uid:
             xp_info = self.db.get_xp_info(uid)
             streak = self.db.get_streak(uid)
+            t = self.theme_mgr.get_theme()
+            lp = t.get("level_prefix", "Nv.")
             self.xp_sidebar_label.configure(
-                text=f"⭐ Nv.{xp_info['level']}  •  🔥 {streak['streak']} dias"
+                text=f"⭐ {lp}{xp_info['level']}  •  🔥 {streak['streak']} dias"
             )
 
     def get_user_id(self):

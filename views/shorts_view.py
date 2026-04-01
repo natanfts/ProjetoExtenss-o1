@@ -302,12 +302,22 @@ class ShortsView(ctk.CTkFrame):
 
         ctk.CTkLabel(controls, text="").pack(expand=True)
 
-        # Bind scroll do mouse para navegar (via tk root, pois CTk não permite bind_all)
-        self.app.bind("<MouseWheel>", self._on_mousewheel)
+        # Bind scroll do mouse LOCALMENTE no frame (não mais global)
+        self._card_frame.bind("<MouseWheel>", self._on_mousewheel)
+        self._card_frame.bind("<Enter>", lambda e: self._bind_scroll())
+        self._card_frame.bind("<Leave>", lambda e: self._unbind_scroll())
 
         # Carregar vídeos iniciais
         self._show_empty_state()
         self.after(500, self._load_videos)
+
+    def _bind_scroll(self):
+        """Ativa scroll do mouse apenas quando o cursor está sobre o card."""
+        self._card_frame.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _unbind_scroll(self):
+        """Desativa scroll global ao sair do card."""
+        self._card_frame.unbind_all("<MouseWheel>")
 
     # ══════════════════════════════════════════════════════════
     # ── SELEÇÃO DE ÁREA ──────────────────────────────────────
@@ -690,6 +700,10 @@ class ShortsView(ctk.CTkFrame):
                     light_image=img, dark_image=img,
                     size=(target_w, target_h),
                 )
+                # LRU cache: limitar a 50 thumbnails
+                if len(self._thumbnail_cache) >= 50:
+                    oldest = next(iter(self._thumbnail_cache))
+                    del self._thumbnail_cache[oldest]
                 self._thumbnail_cache[url] = ctk_img
 
                 self.after(0, lambda: self._set_thumb(label, ctk_img))
@@ -915,4 +929,13 @@ class ShortsView(ctk.CTkFrame):
 
     def on_show(self):
         """Chamado quando a view é exibida."""
-        pass  # Vídeos já estão carregados; não recarregar toda vez
+        # Vídeos já carregados — não recarregar toda vez
+        # Apenas recarregar se nunca foi carregado
+        if not self._videos and not self._loading:
+            self.after(500, self._load_videos)
+
+    def apply_theme(self, t):
+        """Atualiza cores ao trocar tema."""
+        self.configure(fg_color=t["bg"])
+        # Reconstruir layout com novas cores
+        self._show_feed_layout()

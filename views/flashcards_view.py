@@ -118,6 +118,15 @@ class FlashcardsView(ctk.CTkFrame):
             command=self._show_browse,
         ).pack(fill="x", pady=4)
 
+        if stats["total"] > 0:
+            ctk.CTkButton(
+                actions_frame, text="🗑️  Limpar Todos os Flashcards",
+                height=40, font=ctk.CTkFont(size=13),
+                fg_color=t["card"], hover_color=t["danger"],
+                text_color=t["danger"],
+                command=self._confirm_clear_all,
+            ).pack(fill="x", pady=4)
+
         # Revisar por matéria
         subjects = self.db.get_flashcard_subjects(uid)
         if subjects:
@@ -164,6 +173,32 @@ class FlashcardsView(ctk.CTkFrame):
                     fg_color=t["primary"], hover_color=t["button_hover"],
                     command=lambda s=subj: self._start_review_subject(s),
                 ).pack(anchor="w", pady=(5, 0))
+
+    # ══════════════════════════════════════════════════════════
+    # ── LIMPAR TODOS OS FLASHCARDS ───────────────────────────
+    # ══════════════════════════════════════════════════════════
+    def _confirm_clear_all(self):
+        uid = self.app.get_user_id()
+        stats = self.db.get_flashcard_stats(uid)
+        total = stats.get("total", 0)
+
+        msg = CTkMessagebox(
+            title="Limpar Flashcards",
+            message=f"⚠️ Tem certeza que deseja apagar TODOS os {total} flashcards?\n\n"
+                    "Esta ação não pode ser desfeita.\n"
+                    "Todas as revisões e progresso serão perdidos.",
+            icon="warning",
+            option_1="Cancelar",
+            option_2="Apagar Todos",
+        )
+        if msg.get() == "Apagar Todos":
+            removed = self.db.delete_all_flashcards(uid)
+            CTkMessagebox(
+                title="Concluído ✅",
+                message=f"🗑️ {removed} flashcards removidos com sucesso!",
+                icon="check",
+            )
+            self._show_menu()
 
     # ══════════════════════════════════════════════════════════
     # ── MODO REVISÃO ─────────────────────────────────────────
@@ -620,6 +655,23 @@ class FlashcardsView(ctk.CTkFrame):
     # ── lifecycle ────────────────────────────────────────────
     def on_show(self):
         self._show_menu()
+        # Atalhos de teclado para flashcards
+        self.app.bind("<Left>", self._on_key_left)
+        self.app.bind("<Right>", self._on_key_right)
+
+    def _on_key_left(self, event=None):
+        """Atalho: seta esquerda para virar card."""
+        if not self.winfo_ismapped() or self._mode != "review":
+            return
+        if not self._showing_back:
+            self._flip_card()
+
+    def _on_key_right(self, event=None):
+        """Atalho: seta direita para próximo (avaliar como Médio)."""
+        if not self.winfo_ismapped() or self._mode != "review":
+            return
+        if self._showing_back:
+            self._rate_card(4, "medium")
 
     def apply_theme(self, t):
         self.configure(fg_color=t["bg"])
