@@ -93,13 +93,19 @@ class App(ctk.CTk):
         )
         self.login_btn.pack(fill="x", padx=14, pady=(3, 8))
 
-        # Indicador de status de atualização
-        self.update_status_label = ctk.CTkLabel(
-            self.sidebar, text="",
-            font=ctk.CTkFont(size=10),
-            wraplength=200,
+        # Indicador de status de atualização (altura fixa para não causar resize)
+        self._update_status_frame = ctk.CTkFrame(
+            self.sidebar, fg_color="transparent", height=24
         )
-        self.update_status_label.pack(fill="x", padx=14, pady=(0, 12))
+        self._update_status_frame.pack(fill="x", padx=14, pady=(0, 12))
+        self._update_status_frame.pack_propagate(False)
+
+        self.update_status_label = ctk.CTkLabel(
+            self._update_status_frame, text="",
+            font=ctk.CTkFont(size=10),
+            wraplength=200, anchor="w",
+        )
+        self.update_status_label.pack(fill="x")
 
         # Content area
         self.content = ctk.CTkFrame(self, corner_radius=0)
@@ -239,37 +245,44 @@ class App(ctk.CTk):
 
     # ── atualização automática de conteúdo ───────────────────
     def _auto_update_content(self):
-        """Inicia atualização de vídeos em background ao abrir o app."""
+        """Inicia atualização de vídeos em background ao abrir o app.
+        Roda silenciosamente sem atualizar o label a cada tópico,
+        para não causar redimensionamento da interface."""
         started = self.updater.start_update()
         if started:
+            t = self.theme_mgr.get_theme()
             self.update_status_label.configure(
-                text="🔄 Atualizando conteúdo...")
-            self._check_update_status()
+                text="🔄 Atualizando...",
+                text_color=t["accent"],
+            )
+            self._check_update_done()
         else:
             last = self.db.get_last_update("videos")
             if last:
                 self.update_status_label.configure(
-                    text=f"✅ Atualizado: {last.strftime('%d/%m %H:%M')}"
+                    text=f"✅ {last.strftime('%d/%m %H:%M')}"
                 )
 
-    def _check_update_status(self):
-        """Verifica o progresso da atualização periodicamente."""
+    def _check_update_done(self):
+        """Verifica APENAS se a atualização terminou (sem alterar texto durante).
+        Isso evita redimensionamento da interface durante o uso."""
         if self.updater.is_running:
-            t = self.theme_mgr.get_theme()
-            self.update_status_label.configure(
-                text=self.updater.progress,
-                text_color=t["accent"],
-            )
-            self.after(1500, self._check_update_status)
+            # Só checa se terminou, NÃO atualiza o texto do label
+            self.after(5000, self._check_update_done)
         else:
             t = self.theme_mgr.get_theme()
-            color = t["success"] if self.updater.status == "done" else t["danger"]
-            self.update_status_label.configure(
-                text=self.updater.progress,
-                text_color=color,
-            )
-            # Limpar a mensagem após 10 segundos
-            self.after(10000, lambda: self.update_status_label.configure(
-                text=f"✅ Conteúdo atualizado",
+            if self.updater.status == "done":
+                self.update_status_label.configure(
+                    text="✅ Atualizado",
+                    text_color=t["success"],
+                )
+            else:
+                self.update_status_label.configure(
+                    text="⚠️ Erro na atualização",
+                    text_color=t["danger"],
+                )
+            # Limpar a mensagem após 8 segundos
+            self.after(8000, lambda: self.update_status_label.configure(
+                text="",
                 text_color=t["text_sec"],
             ))
