@@ -1,137 +1,68 @@
-import customtkinter as ctk
+import flet as ft
 from datetime import datetime, timedelta
 
 
-class DashboardView(ctk.CTkFrame):
-    """Tela inicial — Dashboard com resumo do dia, XP, streak, metas e conquistas."""
+class DashboardView:
+    """Dashboard — resumo do dia, XP, streak, metas e conquistas."""
 
-    def __init__(self, parent, app):
-        super().__init__(parent, corner_radius=0)
+    def __init__(self, app):
         self.app = app
         self.db = app.db
-        self._build()
 
-    def _build(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+    def on_show(self):
+        pass
 
-        self.title_lb = ctk.CTkLabel(
-            self, text="🏠 Dashboard",
-            font=ctk.CTkFont(size=24, weight="bold"),
-        )
-        self.title_lb.grid(row=0, column=0, pady=(20, 10), padx=25, sticky="w")
-
-        self.scroll = ctk.CTkScrollableFrame(self)
-        self.scroll.grid(row=1, column=0, sticky="nswe", padx=25, pady=(0, 20))
-        self.scroll.grid_columnconfigure(0, weight=1)
-
-    def _load(self):
-        for w in self.scroll.winfo_children():
-            w.destroy()
-
+    def build(self):
         t = self.app.theme_mgr.get_theme()
         uid = self.app.get_user_id()
 
         if not uid:
-            self._show_guest_message(t)
-            return
+            return self._build_guest(t)
 
         # Atualizar streak
         self.db.update_streak(uid)
 
         # ── Saudação ─────────────────────────────────────────
         hour = datetime.now().hour
-        if hour < 12:
-            greeting = "Bom dia"
-        elif hour < 18:
-            greeting = "Boa tarde"
-        else:
-            greeting = "Boa noite"
+        greeting = "Bom dia" if hour < 12 else (
+            "Boa tarde" if hour < 18 else "Boa noite")
         name = self.app.current_user.get("display_name", "Estudante")
-
-        # Saudação temática
         greeting_template = t.get("greeting", "👋 {saudacao}, {nome}!")
         greeting_text = greeting_template.format(saudacao=greeting, nome=name)
 
-        greeting_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        greeting_frame.pack(fill="x", pady=(10, 15))
-
-        ctk.CTkLabel(
-            greeting_frame,
-            text=greeting_text,
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=t["text"],
-        ).pack(anchor="w")
-
-        ctk.CTkLabel(
-            greeting_frame,
-            text=datetime.now().strftime("%A, %d de %B de %Y").capitalize(),
-            font=ctk.CTkFont(size=13),
-            text_color=t["text_sec"],
-        ).pack(anchor="w")
-
-        # ── Barra de XP e Nível ──────────────────────────────
+        # ── XP / Nível ───────────────────────────────────────
         xp_info = self.db.get_xp_info(uid)
         streak_info = self.db.get_streak(uid)
-
-        xp_card = ctk.CTkFrame(
-            self.scroll, corner_radius=14, fg_color=t["card"])
-        xp_card.pack(fill="x", pady=8)
-
-        xp_inner = ctk.CTkFrame(xp_card, fg_color="transparent")
-        xp_inner.pack(fill="x", padx=20, pady=15)
-
-        # Nível + XP
-        level_frame = ctk.CTkFrame(xp_inner, fg_color="transparent")
-        level_frame.pack(fill="x")
-
         level_prefix = t.get("level_prefix", "Nível")
-        ctk.CTkLabel(
-            level_frame,
-            text=f"⭐ {level_prefix} {xp_info['level']}",
-            font=ctk.CTkFont(size=20, weight="bold"),
-            text_color=t["accent"],
-        ).pack(side="left")
-
-        streak_msg = t.get("streak_msg", "🔥 {dias} dias seguidos!").format(
-            dias=streak_info['streak'])
-        ctk.CTkLabel(
-            level_frame,
-            text=streak_msg,
-            font=ctk.CTkFont(size=16, weight="bold"),
-            text_color=t["danger"] if streak_info["streak"] >= 7 else t["warning"],
-        ).pack(side="right")
-
-        # Barra de progresso do nível
-        xp_bar_frame = ctk.CTkFrame(xp_inner, fg_color="transparent")
-        xp_bar_frame.pack(fill="x", pady=(8, 2))
-
-        xp_bar = ctk.CTkProgressBar(xp_bar_frame, height=14, corner_radius=7)
-        xp_bar.set(xp_info["progress"])
-        xp_bar.configure(progress_color=t["accent"], fg_color=t["secondary"])
-        xp_bar.pack(fill="x")
-
         xp_name = t.get("xp_name", "XP")
-        ctk.CTkLabel(
-            xp_inner,
-            text=f"{xp_info['xp']} / {xp_info['xp_next_level']} {xp_name}  •  Recorde de streak: {streak_info['longest']} dias",
-            font=ctk.CTkFont(size=11),
-            text_color=t["text_sec"],
-        ).pack(anchor="w", pady=(2, 0))
+        streak_msg = t.get("streak_msg", "🔥 {dias} dias seguidos!").format(
+            dias=streak_info["streak"])
+
+        xp_card = ft.Container(
+            bgcolor=t["card"], border_radius=14, padding=20,
+            content=ft.Column([
+                ft.Row([
+                    ft.Text(f"⭐ {level_prefix} {xp_info['level']}",
+                            size=20, weight=ft.FontWeight.BOLD, color=t["accent"]),
+                    ft.Text(streak_msg, size=14, weight=ft.FontWeight.BOLD,
+                            color=t["danger"] if streak_info["streak"] >= 7 else t["warning"]),
+                ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                ft.ProgressBar(
+                    value=xp_info["progress"], height=12,
+                    color=t["accent"], bgcolor=t["secondary"],
+                    border_radius=6,
+                ),
+                ft.Text(
+                    f"{xp_info['xp']} / {xp_info['xp_next_level']} {xp_name}  •  Recorde: {streak_info['longest']} dias",
+                    size=11, color=t["text_sec"],
+                ),
+            ], spacing=8),
+        )
 
         # ── Metas do Dia ─────────────────────────────────────
-        ctk.CTkLabel(
-            self.scroll, text="🎯 Metas de Hoje",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["primary"],
-        ).pack(anchor="w", pady=(18, 8))
-
         goals_summary = self.db.get_daily_goals_summary(uid)
         goals = goals_summary["goals"]
         today_stats = self.db.get_today_stats(uid)
-
-        goals_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        goals_frame.pack(fill="x")
 
         goal_configs = {
             "pomodoro": ("🍅", "Pomodoros", today_stats["pomodoros"]),
@@ -139,302 +70,251 @@ class DashboardView(ctk.CTkFrame):
             "quiz":     ("📝", "Questões", today_stats["questions"]),
         }
 
+        goal_cards = []
         for goal in goals:
             gtype = goal["goal_type"]
             config = goal_configs.get(
                 gtype, ("📌", gtype, goal["current_value"]))
             emoji, label, current = config
-
-            # Atualizar valor real
             current = max(current, goal["current_value"])
             target = goal["target_value"]
             done = current >= target
             pct = min(current / target, 1.0) if target > 0 else 0
 
-            card = ctk.CTkFrame(
-                goals_frame, corner_radius=12, fg_color=t["card"])
-            card.pack(fill="x", pady=3)
-            inner = ctk.CTkFrame(card, fg_color="transparent")
-            inner.pack(fill="x", padx=15, pady=12)
-            inner.grid_columnconfigure(1, weight=1)
-
-            ctk.CTkLabel(
-                inner,
-                text=f"{emoji} {label}",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color=t["success"] if done else t["text"],
-            ).grid(row=0, column=0, sticky="w")
-
-            status_text = f"✅ {current}/{target}" if done else f"{current}/{target}"
-            ctk.CTkLabel(
-                inner, text=status_text,
-                font=ctk.CTkFont(size=13, weight="bold"),
-                text_color=t["success"] if done else t["text_sec"],
-            ).grid(row=0, column=2, sticky="e")
-
-            bar = ctk.CTkProgressBar(inner, height=8, corner_radius=4)
-            bar.set(pct)
-            bar.configure(
-                progress_color=t["success"] if done else t["accent"],
-                fg_color=t["secondary"],
+            goal_cards.append(
+                ft.Container(
+                    bgcolor=t["card"], border_radius=12, padding=15,
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text(f"{emoji} {label}", size=14, weight=ft.FontWeight.BOLD,
+                                    color=t["success"] if done else t["text"]),
+                            ft.Text(f"{'✅ ' if done else ''}{current}/{target}",
+                                    size=13, weight=ft.FontWeight.BOLD,
+                                    color=t["success"] if done else t["text_sec"]),
+                        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                        ft.ProgressBar(
+                            value=pct, height=8, border_radius=4,
+                            color=t["success"] if done else t["accent"],
+                            bgcolor=t["secondary"],
+                        ),
+                    ], spacing=6),
+                )
             )
-            bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=(6, 0))
 
+        celebration_row = []
         if goals_summary["all_done"]:
             celebration = t.get(
-                "celebration", "Parabéns! Todas as metas de hoje foram cumpridas!")
-            ctk.CTkLabel(
-                self.scroll,
-                text=f"🎉 {celebration}",
-                font=ctk.CTkFont(size=14, weight="bold"),
-                text_color=t["success"],
-            ).pack(anchor="w", pady=(8, 0))
+                "celebration", "Parabéns! Todas as metas cumpridas!")
+            celebration_row.append(
+                ft.Text(f"🎉 {celebration}", size=14,
+                        weight=ft.FontWeight.BOLD, color=t["success"])
+            )
 
         # ── Estatísticas de Hoje ─────────────────────────────
-        ctk.CTkLabel(
-            self.scroll, text="📊 Resumo de Hoje",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["primary"],
-        ).pack(anchor="w", pady=(18, 8))
-
-        stats_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        stats_frame.pack(fill="x")
-
         stat_items = [
             ("🍅", "Pomodoros", str(today_stats["pomodoros"])),
-            ("⏱️", "Min. de Foco", str(today_stats["focus_min"])),
+            ("⏱️", "Min. Foco", str(today_stats["focus_min"])),
             ("📝", "Questões", str(today_stats["questions"])),
             ("⚡", "XP Ganho", str(today_stats["xp_today"])),
         ]
 
-        row_frame = ctk.CTkFrame(stats_frame, fg_color="transparent")
-        row_frame.pack(fill="x")
-
+        stat_cards = []
         for emoji, label, value in stat_items:
-            card = ctk.CTkFrame(row_frame, corner_radius=12, fg_color=t["card"],
-                                height=90)
-            card.pack(side="left", fill="x", expand=True, padx=4)
-            card.pack_propagate(False)
-            ctk.CTkLabel(
-                card, text=f"{emoji} {value}",
-                font=ctk.CTkFont(size=22, weight="bold"),
-                text_color=t["primary"],
-            ).pack(pady=(18, 2))
-            ctk.CTkLabel(
-                card, text=label,
-                font=ctk.CTkFont(size=11),
-                text_color=t["text_sec"],
-            ).pack()
+            stat_cards.append(
+                ft.Container(
+                    bgcolor=t["card"], border_radius=12,
+                    padding=ft.padding.symmetric(vertical=15, horizontal=10),
+                    expand=True,
+                    content=ft.Column([
+                        ft.Text(f"{emoji} {value}", size=22,
+                                weight=ft.FontWeight.BOLD, color=t["primary"]),
+                        ft.Text(label, size=11, color=t["text_sec"]),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
+                )
+            )
 
         # ── Conquistas Recentes ──────────────────────────────
-        # Verificar novas conquistas
         new_achs = self.db.check_and_grant_achievements(uid)
-
         earned = self.db.get_user_achievements(uid)
         all_achs = self.db.get_all_achievements()
-
-        ctk.CTkLabel(
-            self.scroll, text=f"🏆 Conquistas ({len(earned)}/{len(all_achs)})",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["primary"],
-        ).pack(anchor="w", pady=(18, 8))
-
-        # Mostrar novas conquistas com destaque
-        if new_achs:
-            for ach in new_achs:
-                new_card = ctk.CTkFrame(self.scroll, corner_radius=12,
-                                        fg_color=t["accent"], border_width=2, border_color=t["accent"])
-                new_card.pack(fill="x", pady=4)
-                inner = ctk.CTkFrame(new_card, fg_color="transparent")
-                inner.pack(fill="x", padx=15, pady=10)
-
-                ach_msg = t.get("new_achievement",
-                                "🎉 NOVA CONQUISTA: {emoji} {title}")
-                ctk.CTkLabel(
-                    inner,
-                    text=ach_msg.format(
-                        emoji=ach['emoji'], title=ach['title']),
-                    font=ctk.CTkFont(size=15, weight="bold"),
-                    text_color=t["bg"],
-                ).pack(anchor="w")
-                ctk.CTkLabel(
-                    inner,
-                    text=f"{ach['description']}  (+{ach['xp_reward']} XP)",
-                    font=ctk.CTkFont(size=12),
-                    text_color=t["bg"],
-                ).pack(anchor="w")
-
-        # Grid de conquistas
         earned_keys = {a["key"] for a in earned}
-        achs_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        achs_frame.pack(fill="x")
 
-        row_frame = None
-        for i, ach in enumerate(all_achs):
-            if i % 4 == 0:
-                row_frame = ctk.CTkFrame(achs_frame, fg_color="transparent")
-                row_frame.pack(fill="x", pady=3)
-
+        ach_badges = []
+        for ach in all_achs[:12]:  # Mostrar até 12
             is_earned = ach["key"] in earned_keys
-            card = ctk.CTkFrame(
-                row_frame, corner_radius=10,
-                fg_color=t["card"] if is_earned else t["secondary"],
-                border_width=2 if is_earned else 0,
-                border_color=t["success"] if is_earned else t["card"],
-                height=100,
+            ach_badges.append(
+                ft.Container(
+                    bgcolor=t["card"] if is_earned else t["secondary"],
+                    border_radius=10, width=70, height=70,
+                    border=ft.border.all(
+                        2, t["success"]) if is_earned else None,
+                    alignment=ft.Alignment.CENTER,
+                    content=ft.Column([
+                        ft.Text(ach["emoji"] if is_earned else "🔒", size=22),
+                        ft.Text(ach["title"][:8] if is_earned else "???",
+                                size=8, color=t["text"] if is_earned else t["text_sec"],
+                                text_align=ft.TextAlign.CENTER),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                        spacing=2, alignment=ft.MainAxisAlignment.CENTER),
+                )
             )
-            card.pack(side="left", fill="x", expand=True, padx=3)
-            card.pack_propagate(False)
 
-            ctk.CTkLabel(
-                card,
-                text=ach["emoji"] if is_earned else "🔒",
-                font=ctk.CTkFont(size=24),
-            ).pack(pady=(10, 2))
+        new_ach_cards = []
+        for ach in new_achs:
+            ach_msg = t.get("new_achievement",
+                            "🎉 NOVA CONQUISTA: {emoji} {title}")
+            new_ach_cards.append(
+                ft.Container(
+                    bgcolor=t["accent"], border_radius=12, padding=12,
+                    content=ft.Column([
+                        ft.Text(ach_msg.format(emoji=ach["emoji"], title=ach["title"]),
+                                size=14, weight=ft.FontWeight.BOLD, color=t["bg"]),
+                        ft.Text(f"{ach['description']}  (+{ach['xp_reward']} XP)",
+                                size=12, color=t["bg"]),
+                    ]),
+                )
+            )
 
-            ctk.CTkLabel(
-                card,
-                text=ach["title"] if is_earned else "???",
-                font=ctk.CTkFont(size=11, weight="bold"),
-                text_color=t["text"] if is_earned else t["text_sec"],
-                wraplength=120,
-            ).pack()
-
-            if is_earned:
-                ctk.CTkLabel(
-                    card,
-                    text=f"+{ach['xp_reward']} XP",
-                    font=ctk.CTkFont(size=9),
-                    text_color=t["success"],
-                ).pack()
-        # ── Mini-Gráfico Semanal ─────────────────────────────
-        ctk.CTkLabel(
-            self.scroll, text="📈 Atividade Semanal",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["primary"],
-        ).pack(anchor="w", pady=(18, 8))
-
-        chart_card = ctk.CTkFrame(
-            self.scroll, corner_radius=12, fg_color=t["card"])
-        chart_card.pack(fill="x", pady=5)
-        chart_inner = ctk.CTkFrame(chart_card, fg_color="transparent")
-        chart_inner.pack(fill="x", padx=20, pady=15)
-
+        # ── Atividade Semanal ────────────────────────────────
         sessions = self.db.get_sessions(uid, limit=200)
-        today = datetime.now().date()
+        today_date = datetime.now().date()
         day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
         counts = {}
         for i in range(6, -1, -1):
-            d = today - timedelta(days=i)
+            d = today_date - timedelta(days=i)
             counts[d.isoformat()] = 0
-
         for s in sessions:
             completed = s.get("completed_at", "")
             if completed:
                 date_str = completed[:10]
                 if date_str in counts:
                     counts[date_str] += 1
-
         max_count = max(counts.values()) if counts.values() else 1
         if max_count == 0:
             max_count = 1
 
-        bars_frame = ctk.CTkFrame(
-            chart_inner, fg_color="transparent", height=80)
-        bars_frame.pack(fill="x")
-        bars_frame.pack_propagate(False)
-        for i in range(7):
-            bars_frame.grid_columnconfigure(i, weight=1)
-
-        for i, (date_key, count) in enumerate(counts.items()):
+        week_bars = []
+        for date_key, count in counts.items():
             d = datetime.fromisoformat(date_key).date()
             day_label = day_names[d.weekday()]
-            is_today = d == today
-
-            col_frame = ctk.CTkFrame(bars_frame, fg_color="transparent")
-            col_frame.grid(row=0, column=i, sticky="nsew", padx=2)
-            col_frame.grid_rowconfigure(0, weight=1)
-
-            ctk.CTkLabel(col_frame, text=str(count),
-                         font=ctk.CTkFont(size=10, weight="bold"),
-                         text_color=t["primary"] if count > 0 else t["text_sec"],
-                         ).pack(side="top", pady=(0, 1))
-
-            bar_height = max(int(40 * count / max_count), 3)
+            is_today = d == today_date
+            bar_height = max(int(40 * count / max_count), 4)
             bar_color = t["success"] if is_today and count > 0 else t["primary"] if count > 0 else t["secondary"]
 
-            bar = ctk.CTkFrame(col_frame, fg_color=bar_color,
-                               corner_radius=3, height=bar_height, width=24)
-            bar.pack(side="bottom", pady=(0, 0))
-            bar.pack_propagate(False)
+            week_bars.append(
+                ft.Column([
+                    ft.Text(str(count), size=10, weight=ft.FontWeight.BOLD,
+                            color=t["primary"] if count > 0 else t["text_sec"]),
+                    ft.Container(width=24, height=bar_height,
+                                 bgcolor=bar_color, border_radius=3),
+                    ft.Text(day_label, size=9,
+                            weight=ft.FontWeight.BOLD if is_today else ft.FontWeight.NORMAL,
+                            color=t["success"] if is_today else t["text_sec"]),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2)
+            )
 
-            ctk.CTkLabel(col_frame, text=day_label,
-                         font=ctk.CTkFont(
-                             size=9, weight="bold" if is_today else "normal"),
-                         text_color=t["success"] if is_today else t["text_sec"],
-                         ).pack(side="bottom", pady=(1, 0))
         # ── Ações Rápidas ────────────────────────────────────
-        ctk.CTkLabel(
-            self.scroll, text="⚡ Ações Rápidas",
-            font=ctk.CTkFont(size=18, weight="bold"),
-            text_color=t["primary"],
-        ).pack(anchor="w", pady=(18, 8))
-
-        actions_frame = ctk.CTkFrame(self.scroll, fg_color="transparent")
-        actions_frame.pack(fill="x", pady=(0, 15))
-
         actions = [
-            ("🍅  Iniciar Pomodoro", "pomodoro"),
-            ("📝  Fazer Quiz", "study"),
-            ("🃏  Revisar Flashcards", "flashcards"),
-            ("📋  Ver Tarefas", "tasks"),
+            ("🍅 Pomodoro", "pomodoro"),
+            ("📝 Quiz", "study"),
+            ("🃏 Cards", "flashcards"),
+            ("📋 Tarefas", "tasks"),
         ]
-
+        action_btns = []
         for text, target in actions:
-            ctk.CTkButton(
-                actions_frame, text=text, height=42, width=200,
-                font=ctk.CTkFont(size=14, weight="bold"),
-                fg_color=t["button"], hover_color=t["button_hover"],
-                corner_radius=10,
-                command=lambda f=target: self.app.show_frame(f),
-            ).pack(side="left", padx=4, fill="x", expand=True)
+            action_btns.append(
+                ft.ElevatedButton(
+                    content=ft.Text(text), height=42, expand=True,
+                    bgcolor=t["button"], color="#FFFFFF",
+                    style=ft.ButtonStyle(
+                        shape=ft.RoundedRectangleBorder(radius=10)),
+                    on_click=lambda _, f=target: self.app.show_view(f),
+                )
+            )
 
-    def _show_guest_message(self, t):
-        """Mostra mensagem para convidados."""
+        # ── Layout completo ──────────────────────────────────
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            content=ft.Column(
+                controls=[
+                    # Saudação
+                    ft.Text(greeting_text, size=20,
+                            weight=ft.FontWeight.BOLD, color=t["text"]),
+                    ft.Text(datetime.now().strftime("%A, %d de %B de %Y").capitalize(),
+                            size=12, color=t["text_sec"]),
+                    # XP
+                    xp_card,
+                    # Metas
+                    ft.Text("🎯 Metas de Hoje", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    *goal_cards,
+                    *celebration_row,
+                    # Stats
+                    ft.Text("📊 Resumo de Hoje", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(stat_cards, spacing=6),
+                    # Conquistas
+                    *new_ach_cards,
+                    ft.Text(f"🏆 Conquistas ({len(earned)}/{len(all_achs)})",
+                            size=18, weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(ach_badges, wrap=True, spacing=6, run_spacing=6),
+                    # Atividade semanal
+                    ft.Text("📈 Atividade Semanal", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Container(
+                        bgcolor=t["card"], border_radius=12, padding=15,
+                        content=ft.Row(
+                            week_bars, alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                    ),
+                    # Ações rápidas
+                    ft.Text("⚡ Ações Rápidas", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(action_btns, spacing=6),
+                    ft.Container(height=10),
+                ],
+                spacing=10,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+        )
+
+    def _build_guest(self, t):
         welcome_msg = t.get("welcome", "👋 Bem-vindo ao Switch Focus!")
-        ctk.CTkLabel(
-            self.scroll,
-            text=welcome_msg,
-            font=ctk.CTkFont(size=22, weight="bold"),
-            text_color=t["primary"],
-        ).pack(pady=(40, 10))
-
-        ctk.CTkLabel(
-            self.scroll,
-            text="Faça login ou cadastre-se para desbloquear:\n\n"
-                 "⭐ Sistema de XP e Níveis\n"
-                 "🔥 Streak de dias consecutivos\n"
-                 "🏆 Conquistas e badges\n"
-                 "🎯 Metas diárias personalizáveis\n"
-                 "🃏 Flashcards com repetição espaçada\n"
-                 "📊 Dashboard completo",
-            font=ctk.CTkFont(size=14),
-            text_color=t["text_sec"],
-            justify="left",
-        ).pack(pady=10)
-
-        ctk.CTkButton(
-            self.scroll, text="🔑  Entrar / Cadastrar",
-            width=250, height=45,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color=t["button"], hover_color=t["button_hover"],
-            command=lambda: self.app.show_frame("login"),
-        ).pack(pady=20)
-
-    def on_show(self):
-        self._load()
-
-    def apply_theme(self, t):
-        self.configure(fg_color=t["bg"])
-        self.title_lb.configure(text_color=t["primary"])
-        self.scroll.configure(fg_color=t["bg"])
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            alignment=ft.Alignment.CENTER,
+            padding=30,
+            content=ft.Column(
+                controls=[
+                    ft.Text(welcome_msg, size=22, weight=ft.FontWeight.BOLD, color=t["primary"],
+                            text_align=ft.TextAlign.CENTER),
+                    ft.Container(height=10),
+                    ft.Text(
+                        "Faça login ou cadastre-se para desbloquear:\n\n"
+                        "⭐ Sistema de XP e Níveis\n"
+                        "🔥 Streak de dias consecutivos\n"
+                        "🏆 Conquistas e badges\n"
+                        "🎯 Metas diárias personalizáveis\n"
+                        "🃏 Flashcards com repetição espaçada\n"
+                        "📊 Dashboard completo",
+                        size=14, color=t["text_sec"],
+                    ),
+                    ft.Container(height=20),
+                    ft.ElevatedButton(
+                        content=ft.Text("🔑 Entrar / Cadastrar"),
+                        width=250, height=45,
+                        bgcolor=t["button"], color="#FFFFFF",
+                        style=ft.ButtonStyle(
+                            shape=ft.RoundedRectangleBorder(radius=10)),
+                        on_click=lambda _: self.app.show_view("login"),
+                    ),
+                    ft.TextButton(
+                        content=ft.Text("Continuar como convidado →"),
+                        on_click=lambda _: self.app.show_view("pomodoro"),
+                        style=ft.ButtonStyle(color=t["text_sec"]),
+                    ),
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
+            ),
+        )
