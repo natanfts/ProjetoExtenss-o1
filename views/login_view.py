@@ -1,156 +1,139 @@
-import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
+import flet as ft
 
 
-class LoginView(ctk.CTkFrame):
-    def __init__(self, parent, app):
-        super().__init__(parent, corner_radius=0)
+class LoginView:
+    """Tela de Login / Cadastro."""
+
+    def __init__(self, app):
         self.app = app
         self.db = app.db
-        self._mode = "login"  # login | register
-        self._build()
+        self._mode = "login"
 
-    def _build(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
+    def build(self):
+        t = self.app.theme_mgr.get_theme()
 
-        self.card = ctk.CTkFrame(self, width=420, height=480, corner_radius=16)
-        self.card.place(relx=0.5, rely=0.5, anchor="center")
-        self.card.grid_propagate(False)
-
-        self.title_lb = ctk.CTkLabel(
-            self.card, text="🔑 Entrar",
-            font=ctk.CTkFont(size=24, weight="bold"),
+        self._username = ft.TextField(
+            label="Usuário", width=300, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
         )
-        self.title_lb.pack(pady=(30, 5))
-
-        self.subtitle = ctk.CTkLabel(
-            self.card, text="Acesse sua conta para sincronizar dados",
-            font=ctk.CTkFont(size=12),
+        self._password = ft.TextField(
+            label="Senha", width=300, height=50, password=True, can_reveal_password=True,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
         )
-        self.subtitle.pack(pady=(0, 25))
-
-        self.username_entry = ctk.CTkEntry(
-            self.card, placeholder_text="Usuário", width=300, height=42,
+        self._display_name = ft.TextField(
+            label="Nome de exibição", width=300, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+            visible=False,
         )
-        self.username_entry.pack(pady=6)
 
-        self.password_entry = ctk.CTkEntry(
-            self.card, placeholder_text="Senha", show="•", width=300, height=42,
+        self._title = ft.Text("🔑 Entrar", size=24,
+                              weight=ft.FontWeight.BOLD, color=t["primary"])
+        self._subtitle = ft.Text(
+            "Acesse sua conta para sincronizar dados",
+            size=12, color=t["text_sec"],
         )
-        self.password_entry.pack(pady=6)
 
-        self.name_entry = ctk.CTkEntry(
-            self.card, placeholder_text="Nome de exibição", width=300, height=42,
+        self._action_btn = ft.ElevatedButton(
+            content=ft.Text("Entrar"), width=300, height=45,
+            bgcolor=t["button"], color="#FFFFFF",
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+            on_click=self._do_action,
         )
-        # Escondido no modo login
 
-        self.action_btn = ctk.CTkButton(
-            self.card, text="Entrar", width=300, height=42,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            command=self._do_action,
+        self._toggle_btn = ft.TextButton(
+            content=ft.Text("Não tem conta? Cadastre-se"), width=300,
+            on_click=self._toggle_mode,
+            style=ft.ButtonStyle(color=t["text_sec"]),
         )
-        self.action_btn.pack(pady=(20, 8))
 
-        self.toggle_btn = ctk.CTkButton(
-            self.card, text="Não tem conta? Cadastre-se",
-            width=300, height=36, fg_color="transparent",
-            font=ctk.CTkFont(size=12),
-            command=self._toggle_mode,
+        self._skip_btn = ft.TextButton(
+            content=ft.Text("Continuar como convidado →"), width=300,
+            on_click=lambda _: self.app.show_view("pomodoro"),
+            style=ft.ButtonStyle(color=t["text_sec"]),
         )
-        self.toggle_btn.pack(pady=2)
 
-        self.skip_btn = ctk.CTkButton(
-            self.card, text="Continuar como convidado →",
-            width=300, height=36, fg_color="transparent",
-            font=ctk.CTkFont(size=12),
-            command=lambda: self.app.show_frame("pomodoro"),
+        card = ft.Container(
+            width=380,
+            padding=30,
+            border_radius=16,
+            bgcolor=t["card"],
+            content=ft.Column(
+                controls=[
+                    self._title,
+                    self._subtitle,
+                    ft.Container(height=15),
+                    self._username,
+                    self._password,
+                    self._display_name,
+                    ft.Container(height=10),
+                    self._action_btn,
+                    self._toggle_btn,
+                    self._skip_btn,
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=8,
+            ),
         )
-        self.skip_btn.pack(pady=2)
 
-    def _toggle_mode(self):
+        return ft.Container(
+            expand=True,
+            bgcolor=t["bg"],
+            alignment=ft.Alignment.CENTER,
+            content=card,
+        )
+
+    def on_show(self):
+        self._mode = "login"
+
+    def _toggle_mode(self, e=None):
         if self._mode == "login":
             self._mode = "register"
-            self.title_lb.configure(text="📝 Cadastrar")
-            self.subtitle.configure(
-                text="Crie sua conta para salvar seu progresso")
-            self.action_btn.configure(text="Cadastrar")
-            self.toggle_btn.configure(text="Já tem conta? Faça login")
-            self.name_entry.pack(after=self.password_entry, pady=6)
+            self._title.value = "📝 Cadastrar"
+            self._subtitle.value = "Crie sua conta para salvar seu progresso"
+            self._action_btn.content = ft.Text("Cadastrar")
+            self._toggle_btn.content = ft.Text("Já tem conta? Faça login")
+            self._display_name.visible = True
         else:
             self._mode = "login"
-            self.title_lb.configure(text="🔑 Entrar")
-            self.subtitle.configure(
-                text="Acesse sua conta para sincronizar dados")
-            self.action_btn.configure(text="Entrar")
-            self.toggle_btn.configure(text="Não tem conta? Cadastre-se")
-            self.name_entry.pack_forget()
+            self._title.value = "🔑 Entrar"
+            self._subtitle.value = "Acesse sua conta para sincronizar dados"
+            self._action_btn.content = ft.Text("Entrar")
+            self._toggle_btn.content = ft.Text("Não tem conta? Cadastre-se")
+            self._display_name.visible = False
+        self.app.page.update()
 
-    def _do_action(self):
-        username = self.username_entry.get().strip()
-        password = self.password_entry.get().strip()
+    def _do_action(self, e=None):
+        username = self._username.value.strip() if self._username.value else ""
+        password = self._password.value.strip() if self._password.value else ""
+
         if not username or not password:
-            CTkMessagebox(title="Atenção",
-                          message="Preencha todos os campos.", icon="warning")
+            self.app.show_snackbar("⚠️ Preencha todos os campos.")
             return
 
-        if self._mode == "register":
-            # Validação de força da senha
-            if len(password) < 4:
-                CTkMessagebox(title="Senha Fraca",
-                              message="A senha deve ter pelo menos 4 caracteres.", icon="warning")
-                return
+        if self._mode == "register" and len(password) < 4:
+            self.app.show_snackbar(
+                "⚠️ A senha deve ter pelo menos 4 caracteres.")
+            return
 
         if self._mode == "login":
             user = self.db.authenticate(username, password)
             if user:
                 self.app.set_user(user)
-                self._clear()
-                self.app.show_frame("pomodoro")
+                self.app.show_snackbar("✅ Login realizado com sucesso!")
+                self.app.show_view("dashboard")
             else:
-                CTkMessagebox(
-                    title="Erro", message="Usuário ou senha inválidos.", icon="cancel")
+                self.app.show_snackbar(
+                    "❌ Usuário ou senha inválidos.", bgcolor="#F44336")
         else:
-            display = self.name_entry.get().strip() or username
+            display = (self._display_name.value or "").strip() or username
             user = self.db.create_user(username, password, display)
             if user:
                 self.app.set_user(user)
-                self._clear()
-                CTkMessagebox(
-                    title="Sucesso", message="Conta criada com sucesso!", icon="check")
-                self.app.show_frame("pomodoro")
+                self.app.show_snackbar("✅ Conta criada com sucesso!")
+                self.app.show_view("dashboard")
             else:
-                CTkMessagebox(
-                    title="Erro", message="Usuário já existe.", icon="cancel")
-
-    def _clear(self):
-        self.username_entry.delete(0, "end")
-        self.password_entry.delete(0, "end")
-        self.name_entry.delete(0, "end")
-
-    def on_show(self):
-        """Reset campos e estado ao exibir a view."""
-        self._clear()
-        if self._mode == "register":
-            self._toggle_mode()  # Voltar ao modo login
-
-    def apply_theme(self, t):
-        self.configure(fg_color=t["bg"])
-        self.card.configure(fg_color=t["card"])
-        self.title_lb.configure(text_color=t["primary"])
-        self.subtitle.configure(text_color=t["text_sec"])
-        self.username_entry.configure(
-            fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"],
-        )
-        self.password_entry.configure(
-            fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"],
-        )
-        self.name_entry.configure(
-            fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"],
-        )
-        self.action_btn.configure(
-            fg_color=t["button"], hover_color=t["button_hover"])
-        self.toggle_btn.configure(
-            text_color=t["primary"], hover_color=t["card"])
-        self.skip_btn.configure(
-            text_color=t["text_sec"], hover_color=t["card"])
+                self.app.show_snackbar(
+                    "❌ Usuário já existe.", bgcolor="#F44336")

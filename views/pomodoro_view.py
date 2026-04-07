@@ -1,7 +1,8 @@
-import customtkinter as ctk
+import flet as ft
 from datetime import datetime
 import platform
 import threading
+import asyncio
 
 # Guard: winsound só existe no Windows
 if platform.system() == "Windows":
@@ -10,183 +11,177 @@ else:
     winsound = None
 
 
-class PomodoroView(ctk.CTkFrame):
-    def __init__(self, parent, app):
-        super().__init__(parent, corner_radius=0)
+class PomodoroView:
+    """Timer Pomodoro com controles e seleção de tarefa."""
+
+    def __init__(self, app):
         self.app = app
         self.db = app.db
 
-        # Estado do timer
         self._focus_min = 25
         self._short_min = 5
         self._long_min = 15
         self._seconds_left = self._focus_min * 60
         self._running = False
-        self._session_type = "foco"       # foco | pausa_curta | pausa_longa
+        self._session_type = "foco"
         self._sessions_done = 0
         self._started_at = None
-        self._selected_task = None        # dict da tarefa
-        self._timer_id = None
+        self._selected_task = None
+        self._built = False
 
-        self._build()
+        # Controles persistentes
+        self._time_label = ft.Text("25:00", size=72, weight=ft.FontWeight.BOLD)
+        self._session_label = ft.Text("Sessão de Foco", size=16)
+        self._counter_label = ft.Text("Sessão 0/4", size=14)
+        self._progress_bar = ft.ProgressBar(
+            value=1.0, height=10, border_radius=5)
+        self._task_label = ft.Text("📋 Nenhuma tarefa selecionada", size=13)
 
-    # ── construção da interface ──────────────────────────────
-    def _build(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+        self._start_btn = ft.Button(content=ft.Text(
+            "▶ Iniciar"), height=44, width=130, on_click=self._start)
+        self._pause_btn = ft.Button(content=ft.Text("⏸ Pausar"), height=44, width=130,
+                                    disabled=True, on_click=self._pause)
+        self._reset_btn = ft.Button(content=ft.Text(
+            "🔄 Reset"), height=44, width=130, on_click=self._reset)
+        self._skip_btn = ft.Button(content=ft.Text("⏭ Pular"), height=44, width=130,
+                                   visible=False, on_click=self._skip_break)
 
-        # Título
-        self.header = ctk.CTkLabel(
-            self, text="🍅 Pomodoro Timer",
-            font=ctk.CTkFont(size=26, weight="bold"),
+    def on_show(self):
+        self._load_durations()
+        self._update_display()
+
+    def build(self):
+        t = self.app.theme_mgr.get_theme()
+
+        # Aplicar cores
+        self._time_label.color = t["text"]
+        self._session_label.color = t["accent"]
+        self._counter_label.color = t["text_sec"]
+        self._progress_bar.color = t["progress"]
+        self._progress_bar.bgcolor = t["secondary"]
+        self._task_label.color = t["text_sec"]
+
+        self._start_btn.bgcolor = t["success"]
+        self._start_btn.color = "#FFFFFF"
+        self._pause_btn.bgcolor = t["warning"]
+        self._pause_btn.color = "#000000"
+        self._reset_btn.bgcolor = t["danger"]
+        self._reset_btn.color = "#FFFFFF"
+        self._skip_btn.bgcolor = t["accent"]
+        self._skip_btn.color = "#000000"
+
+        # Atualizar label de sessão
+        labels = {
+            "foco": t.get("focus_label", "Sessão de Foco"),
+            "pausa_curta": t.get("short_break_label", "Pausa Curta"),
+            "pausa_longa": t.get("long_break_label", "Pausa Longa"),
+        }
+        self._session_label.value = labels.get(
+            self._session_type, "Sessão de Foco")
+
+        pick_task_btn = ft.TextButton(
+            content=ft.Text("Selecionar Tarefa"), on_click=self._pick_task,
+            style=ft.ButtonStyle(color=t["primary"]),
         )
-        self.header.grid(row=0, column=0, pady=(25, 10))
 
-        # Container central
-        center = ctk.CTkFrame(self, fg_color="transparent")
-        center.grid(row=1, column=0, sticky="n", pady=10)
-
-        # Timer card
-        self.timer_card = ctk.CTkFrame(
-            center, width=340, height=340, corner_radius=20)
-        self.timer_card.pack(pady=10)
-        self.timer_card.pack_propagate(False)
-
-        self.session_label = ctk.CTkLabel(
-            self.timer_card, text="Sessão de Foco",
-            font=ctk.CTkFont(size=16),
-        )
-        self.session_label.pack(pady=(30, 5))
-
-        self.time_label = ctk.CTkLabel(
-            self.timer_card, text="25:00",
-            font=ctk.CTkFont(size=72, weight="bold"),
-        )
-        self.time_label.pack(pady=(10, 5))
-
-        self.counter_label = ctk.CTkLabel(
-            self.timer_card, text="Sessão 0/4",
-            font=ctk.CTkFont(size=14),
-        )
-        self.counter_label.pack(pady=(0, 5))
-
-        # Barra de progresso
-        self.progress = ctk.CTkProgressBar(
-            self.timer_card, width=260, height=10)
-        self.progress.pack(pady=(5, 15))
-        self.progress.set(1.0)
-
-        # Botões de controle
-        btn_frame = ctk.CTkFrame(center, fg_color="transparent")
-        btn_frame.pack(pady=10)
-
-        self.start_btn = ctk.CTkButton(
-            btn_frame, text="▶  Iniciar", width=120, height=44,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            command=self._start,
-        )
-        self.start_btn.grid(row=0, column=0, padx=5)
-
-        self.pause_btn = ctk.CTkButton(
-            btn_frame, text="⏸  Pausar", width=120, height=44,
-            font=ctk.CTkFont(size=15), state="disabled",
-            command=self._pause,
-        )
-        self.pause_btn.grid(row=0, column=1, padx=5)
-
-        self.reset_btn = ctk.CTkButton(
-            btn_frame, text="🔄  Reiniciar", width=120, height=44,
-            font=ctk.CTkFont(size=15),
-            command=self._reset,
-        )
-        self.reset_btn.grid(row=0, column=2, padx=5)
-
-        self.skip_btn = ctk.CTkButton(
-            btn_frame, text="⏭  Pular", width=120, height=44,
-            font=ctk.CTkFont(size=15),
-            command=self._skip_break,
-        )
-        self.skip_btn.grid(row=0, column=3, padx=5)
-        self.skip_btn.grid_remove()  # Inicialmente oculto
-
-        # Tarefa vinculada
-        task_frame = ctk.CTkFrame(center, fg_color="transparent")
-        task_frame.pack(pady=(15, 5))
-
-        self.task_label = ctk.CTkLabel(
-            task_frame, text="📋 Tarefa: Nenhuma selecionada",
-            font=ctk.CTkFont(size=13),
-        )
-        self.task_label.pack(side="left", padx=(0, 10))
-
-        self.pick_task_btn = ctk.CTkButton(
-            task_frame, text="Selecionar Tarefa", width=140, height=32,
-            font=ctk.CTkFont(size=12),
-            command=self._pick_task,
-        )
-        self.pick_task_btn.pack(side="left")
-
-        # Atalho: tipo manual
-        type_frame = ctk.CTkFrame(center, fg_color="transparent")
-        type_frame.pack(pady=5)
-
+        # Seletor de tipo
+        type_btns = []
         for txt, stype in [("Foco", "foco"), ("Pausa Curta", "pausa_curta"), ("Pausa Longa", "pausa_longa")]:
-            ctk.CTkButton(
-                type_frame, text=txt, width=110, height=30,
-                font=ctk.CTkFont(size=12),
-                fg_color="transparent",
-                command=lambda s=stype: self._set_type(s),
-            ).pack(side="left", padx=4)
+            type_btns.append(
+                ft.TextButton(
+                    content=ft.Text(txt),
+                    on_click=lambda _, s=stype: self._set_type(s),
+                    style=ft.ButtonStyle(color=t["text_sec"]),
+                )
+            )
 
-    # ── controle do timer ────────────────────────────────────
-    def _start(self):
+        timer_card = ft.Container(
+            width=340, height=320, border_radius=20,
+            bgcolor=t["card"],
+            alignment=ft.Alignment.CENTER,
+            content=ft.Column([
+                self._session_label,
+                self._time_label,
+                self._counter_label,
+                ft.Container(
+                    content=self._progress_bar,
+                    width=260, padding=ft.padding.only(top=10),
+                ),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER, spacing=5),
+        )
+
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            alignment=ft.Alignment.TOP_CENTER,
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            content=ft.Column([
+                timer_card,
+                ft.Row([
+                    self._start_btn, self._pause_btn,
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                ft.Row([
+                    self._reset_btn, self._skip_btn,
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                ft.Row([self._task_label, pick_task_btn],
+                       alignment=ft.MainAxisAlignment.CENTER),
+                ft.Row(type_btns, alignment=ft.MainAxisAlignment.CENTER),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+        )
+
+    # ── timer ────────────────────────────────────────────────
+    def _start(self, e=None):
         if not self._running:
             self._running = True
             self._started_at = self._started_at or datetime.now().isoformat()
-            self.start_btn.configure(state="disabled")
-            self.pause_btn.configure(state="normal")
-            self._tick()
+            self._start_btn.disabled = True
+            self._pause_btn.disabled = False
+            self.app.page.update()
+            self.app.page.run_task(self._tick_loop)
 
-    def _pause(self):
+    def _pause(self, e=None):
         self._running = False
-        self.start_btn.configure(state="normal", text="▶  Continuar")
-        self.pause_btn.configure(state="disabled")
-        if self._timer_id:
-            self.after_cancel(self._timer_id)
+        self._start_btn.disabled = False
+        self._start_btn.content = ft.Text("▶ Continuar")
+        self._pause_btn.disabled = True
+        self.app.page.update()
 
-    def _reset(self):
+    def _reset(self, e=None):
         self._running = False
-        if self._timer_id:
-            self.after_cancel(self._timer_id)
         self._load_durations()
         self._seconds_left = self._get_duration() * 60
         self._started_at = None
+        self._start_btn.disabled = False
+        self._start_btn.content = ft.Text("▶ Iniciar")
+        self._pause_btn.disabled = True
+        self._progress_bar.value = 1.0
         self._update_display()
-        self.start_btn.configure(state="normal", text="▶  Iniciar")
-        self.pause_btn.configure(state="disabled")
-        self.progress.set(1.0)
-        # Restaurar título da janela
-        self.app.title("🔀 Switch Focus – Estude com Foco!")
+        self.app.page.update()
 
-    def _tick(self):
-        if not self._running:
-            return
-        if self._seconds_left > 0:
+    async def _tick_loop(self):
+        while self._running and self._seconds_left > 0:
+            await asyncio.sleep(1)
+            if not self._running:
+                break
             self._seconds_left -= 1
-            self._update_display()
             total = self._get_duration() * 60
-            self.progress.set(self._seconds_left / total if total else 0)
-            self._timer_id = self.after(1000, self._tick)
-        else:
+            self._progress_bar.value = self._seconds_left / total if total else 0
+            self._update_display()
+            try:
+                self.app.page.update()
+            except Exception:
+                break
+
+        if self._seconds_left <= 0 and self._running:
+            self._running = False
             self._session_complete()
 
     def _session_complete(self):
-        self._running = False
-        self.start_btn.configure(state="normal", text="▶  Iniciar")
-        self.pause_btn.configure(state="disabled")
+        self._start_btn.disabled = False
+        self._start_btn.content = ft.Text("▶ Iniciar")
+        self._pause_btn.disabled = True
 
         duration = self._get_duration()
-        # Salvar sessão no banco
         self.db.save_session(
             self._session_type, duration,
             self._started_at or datetime.now().isoformat(),
@@ -198,7 +193,6 @@ class PomodoroView(ctk.CTkFrame):
             self._sessions_done += 1
             if self._selected_task:
                 self.db.increment_task_pomodoro(self._selected_task["id"])
-            # Gamificação: XP + metas
             uid = self.app.get_user_id()
             if uid:
                 self.db.add_xp(uid, 25, "pomodoro",
@@ -209,16 +203,13 @@ class PomodoroView(ctk.CTkFrame):
                 self.db.check_and_grant_achievements(uid)
                 self.app.refresh_xp_sidebar()
 
-        # Notificação sonora em thread separada (cross-platform)
+        # Beep
         def _beep():
             if winsound:
                 winsound.Beep(800, 600)
             else:
-                print("\a")  # Fallback: terminal bell
+                print("\a")
         threading.Thread(target=_beep, daemon=True).start()
-
-        # Restaurar título da janela
-        self.app.title("🔀 Switch Focus – Estude com Foco!")
 
         # Auto-switch
         if self._session_type == "foco":
@@ -230,35 +221,48 @@ class PomodoroView(ctk.CTkFrame):
             self._set_type("foco")
 
         self._started_at = None
+        self.app.show_snackbar("⏰ Sessão concluída!")
+        try:
+            self.app.page.update()
+        except Exception:
+            pass
 
-    def _set_type(self, stype):
+    def _set_type(self, stype, e=None):
+        self._running = False
         self._session_type = stype
         self._load_durations()
         self._seconds_left = self._get_duration() * 60
+        self._progress_bar.value = 1.0
+        self._start_btn.disabled = False
+        self._start_btn.content = ft.Text("▶ Iniciar")
+        self._pause_btn.disabled = True
+        self._started_at = None
+
         t = self.app.theme_mgr.get_theme()
         labels = {
             "foco": t.get("focus_label", "Sessão de Foco"),
             "pausa_curta": t.get("short_break_label", "Pausa Curta"),
             "pausa_longa": t.get("long_break_label", "Pausa Longa"),
         }
-        self.session_label.configure(text=labels.get(stype, stype))
+        self._session_label.value = labels.get(stype, stype)
+
+        # Mostrar/ocultar botão pular
+        self._skip_btn.visible = stype in ("pausa_curta", "pausa_longa")
+
         self._update_display()
-        self.progress.set(1.0)
-        self.start_btn.configure(state="normal", text="▶  Iniciar")
-        self.pause_btn.configure(state="disabled")
-        self._running = False
-        self._started_at = None
-        # Mostrar botão Pular apenas durante pausas
-        if hasattr(self, "skip_btn"):
-            if stype in ("pausa_curta", "pausa_longa"):
-                self.skip_btn.grid()
-            else:
-                self.skip_btn.grid_remove()
+        try:
+            self.app.page.update()
+        except Exception:
+            pass
+
+    def _skip_break(self, e=None):
+        if self._session_type in ("pausa_curta", "pausa_longa"):
+            self._running = False
+            self._set_type("foco")
 
     def _get_duration(self):
-        return {"foco": self._focus_min, "pausa_curta": self._short_min, "pausa_longa": self._long_min}.get(
-            self._session_type, self._focus_min
-        )
+        return {"foco": self._focus_min, "pausa_curta": self._short_min,
+                "pausa_longa": self._long_min}.get(self._session_type, self._focus_min)
 
     def _load_durations(self):
         user = self.app.current_user
@@ -269,106 +273,52 @@ class PomodoroView(ctk.CTkFrame):
 
     def _update_display(self):
         m, s = divmod(self._seconds_left, 60)
-        time_str = f"{m:02d}:{s:02d}"
-        self.time_label.configure(text=time_str)
-        self.counter_label.configure(text=f"Sessão {self._sessions_done}/4")
-        # Mostrar timer no título da janela
-        if self._running:
-            stype_names = {"foco": "Foco", "pausa_curta": "Pausa",
-                           "pausa_longa": "Pausa Longa"}
-            sname = stype_names.get(self._session_type, "")
-            self.app.title(f"⏱ {time_str} — {sname} | Switch Focus")
+        self._time_label.value = f"{m:02d}:{s:02d}"
+        self._counter_label.value = f"Sessão {self._sessions_done}/4"
 
     # ── seleção de tarefa ────────────────────────────────────
-    def _pick_task(self):
+    def _pick_task(self, e=None):
         tasks = self.db.get_tasks(
             user_id=self.app.get_user_id(), status="pendente")
         if not tasks:
-            self.task_label.configure(text="📋 Nenhuma tarefa pendente")
+            self.app.show_snackbar("📋 Nenhuma tarefa pendente")
             return
 
-        win = ctk.CTkToplevel(self)
-        win.title("Selecionar Tarefa")
-        win.geometry("400x350")
-        win.transient(self)
-        win.grab_set()
-
-        ctk.CTkLabel(win, text="Selecione uma tarefa:",
-                     font=ctk.CTkFont(size=15, weight="bold")).pack(pady=12)
-
-        scroll = ctk.CTkScrollableFrame(win, width=360, height=240)
-        scroll.pack(padx=15, fill="both", expand=True)
-
-        for task in tasks:
-            btn = ctk.CTkButton(
-                scroll,
-                text=f"{'🔴' if task['priority']=='alta' else '🟡' if task['priority']=='média' else '🟢'} {task['title']}",
-                anchor="w", height=36,
-                command=lambda t=task, w=win: self._select_task(t, w),
-            )
-            btn.pack(fill="x", pady=2)
-
-    def _select_task(self, task, win):
-        self._selected_task = task
-        self.task_label.configure(text=f"📋 Tarefa: {task['title']}")
-        win.destroy()
-
-    def _skip_break(self):
-        """Pula a pausa e volta direto ao foco."""
-        if self._session_type in ("pausa_curta", "pausa_longa"):
-            self._running = False
-            if self._timer_id:
-                self.after_cancel(self._timer_id)
-            self._set_type("foco")
-
-    # ── on_show ──────────────────────────────────────────────
-    def on_show(self):
-        self._load_durations()
-        self._update_display()
-        # Atalho de teclado: Space para iniciar/pausar
-        self.app.bind("<space>", self._on_space_key)
-
-    def _on_space_key(self, event=None):
-        """Atalho: Espaço para iniciar/pausar o timer."""
-        # Verificar se o Pomodoro está visível
-        if not self.winfo_ismapped():
-            return
-        if self._running:
-            self._pause()
-        else:
-            self._start()
-
-    # ── tema ─────────────────────────────────────────────────────
-    def _update_themed_header(self):
         t = self.app.theme_mgr.get_theme()
-        self.header.configure(text=t.get("timer_title", "🍅 Pomodoro Timer"))
-        # Atualizar labels da sessão atual
-        if hasattr(self, "session_label"):
-            labels = {
-                "foco": t.get("focus_label", "Sessão de Foco"),
-                "pausa_curta": t.get("short_break_label", "Pausa Curta"),
-                "pausa_longa": t.get("long_break_label", "Pausa Longa"),
-            }
-            self.session_label.configure(text=labels.get(
-                self._session_type, self._session_type))
+        task_tiles = []
+        for task in tasks:
+            prio_icon = {"alta": "🔴", "média": "🟡",
+                         "baixa": "🟢"}.get(task["priority"], "⚪")
+            task_tiles.append(
+                ft.ListTile(
+                    title=ft.Text(
+                        f"{prio_icon} {task['title']}", color=t["text"]),
+                    on_click=lambda _, tk=task: self._select_task(tk),
+                )
+            )
 
-    def apply_theme(self, t):
-        self._update_themed_header()
-        self.configure(fg_color=t["bg"])
-        self.header.configure(text_color=t["primary"])
-        self.timer_card.configure(fg_color=t["card"])
-        self.session_label.configure(text_color=t["accent"])
-        self.time_label.configure(text_color=t["text"])
-        self.counter_label.configure(text_color=t["text_sec"])
-        self.progress.configure(
-            progress_color=t["progress"], fg_color=t["secondary"])
-        self.start_btn.configure(fg_color=t["success"], hover_color="#5DBF60")
-        self.pause_btn.configure(
-            fg_color=t["warning"], hover_color="#FFD54F", text_color="#000")
-        self.reset_btn.configure(fg_color=t["danger"], hover_color="#EF5350")
-        self.task_label.configure(text_color=t["text_sec"])
-        self.pick_task_btn.configure(
-            fg_color=t["button"], hover_color=t["button_hover"])
-        if hasattr(self, "skip_btn"):
-            self.skip_btn.configure(
-                fg_color=t["accent"], hover_color=t["button_hover"], text_color="#000")
+        bs = ft.BottomSheet(
+            content=ft.Container(
+                padding=20,
+                content=ft.Column(
+                    controls=[
+                        ft.Text("Selecionar Tarefa", size=18,
+                                weight=ft.FontWeight.BOLD, color=t["primary"]),
+                        *task_tiles,
+                    ],
+                    tight=True, scroll=ft.ScrollMode.AUTO,
+                ),
+                bgcolor=t["card"],
+            ),
+        )
+        self.app.page.overlay.append(bs)
+        bs.open = True
+        self.app.page.update()
+
+    def _select_task(self, task):
+        self._selected_task = task
+        self._task_label.value = f"📋 Tarefa: {task['title']}"
+        # Fechar bottom sheet
+        if self.app.page.overlay:
+            self.app.page.overlay[-1].open = False
+        self.app.page.update()

@@ -1,275 +1,378 @@
-import customtkinter as ctk
+import flet as ft
+import threading
 from database import DatabaseManager
 from themes import ThemeManager, THEMES
 from content_updater import ContentUpdater
 
 
-class App(ctk.CTk):
-    def __init__(self):
-        super().__init__()
+class SwitchFocusApp:
+    """Aplicativo principal Switch Focus — Flet (mobile-first)."""
 
-        self.title("🔀 Switch Focus – Estude com Foco!")
-        self.geometry("1120x700")
-        self.minsize(900, 600)
+    NAV_VIEWS = ["dashboard", "pomodoro", "tasks", "study", "more"]
 
+    def __init__(self, page: ft.Page):
+        self.page = page
         self.db = DatabaseManager()
         self.theme_mgr = ThemeManager()
         self.updater = ContentUpdater(self.db, interval_hours=24)
-        self.current_user = None  # None = convidado
+        self.current_user = None
+        self._views: dict = {}
+        self._current_view_name = None
 
-        ctk.set_appearance_mode("dark")
+    # ── inicialização ────────────────────────────────────────
+    def initialize(self):
+        t = self.theme_mgr.get_theme()
 
-        # frames registrados
-        self._frames: dict[str, ctk.CTkFrame] = {}
-        self._nav_buttons: dict[str, ctk.CTkButton] = {}
-        self._active_frame = None
+        self.page.title = "Switch Focus"
+        self.page.theme_mode = ft.ThemeMode.DARK
+        self.page.bgcolor = t["bg"]
+        self.page.padding = 0
+        self.page.window.width = 420
+        self.page.window.height = 800
 
-        self._build_layout()
-        self._register_views()
-        self._apply_theme()
-        self.show_frame("dashboard")
+        # Área de conteúdo
+        self._content = ft.Container(expand=True, bgcolor=t["bg"])
 
-        # Iniciar atualização automática de conteúdo em background
-        self.after(2000, self._auto_update_content)
-
-    # ── layout principal ─────────────────────────────────────
-    def _build_layout(self):
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-
-        # Sidebar
-        self.sidebar = ctk.CTkFrame(self, width=230, corner_radius=0)
-        self.sidebar.grid(row=0, column=0, sticky="nswe")
-        self.sidebar.grid_propagate(False)
-
-        # Logo / título
-        self.logo_label = ctk.CTkLabel(
-            self.sidebar, text="🔀 Switch Focus",
-            font=ctk.CTkFont(size=20, weight="bold"),
+        # App bar
+        self._app_bar = ft.AppBar(
+            title=ft.Text("🔀 Switch Focus", size=18,
+                          weight=ft.FontWeight.BOLD, color=t["text"]),
+            bgcolor=t["sidebar"],
+            center_title=False,
+            actions=[],
         )
-        self.logo_label.pack(pady=(25, 5))
+        self.page.appbar = self._app_bar
 
-        self.user_label = ctk.CTkLabel(
-            self.sidebar, text="👤 Convidado",
-            font=ctk.CTkFont(size=13),
+        # Barra de navegação inferior
+        self._nav_bar = ft.NavigationBar(
+            selected_index=0,
+            bgcolor=t["sidebar"],
+            indicator_color=t["primary"],
+            label_behavior=ft.NavigationBarLabelBehavior.ALWAYS_SHOW,
+            destinations=[
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.HOME_ROUNDED, label="Home"),
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.TIMER_ROUNDED, label="Pomodoro"),
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.CHECKLIST_ROUNDED, label="Tarefas"),
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.SCHOOL_ROUNDED, label="Estudar"),
+                ft.NavigationBarDestination(
+                    icon=ft.Icons.MENU_ROUNDED, label="Mais"),
+            ],
+            on_change=self._on_nav_change,
         )
-        self.user_label.pack(pady=(0, 5))
+        self.page.navigation_bar = self._nav_bar
 
-        self.xp_sidebar_label = ctk.CTkLabel(
-            self.sidebar, text="",
-            font=ctk.CTkFont(size=11),
-        )
-        self.xp_sidebar_label.pack(pady=(0, 15))
+        self.page.add(self._content)
+        self.show_view("dashboard")
 
-        # Botões de navegação
-        nav_items = [
-            ("dashboard", "🏠  Dashboard"),
-            ("pomodoro",  "🍅  Pomodoro"),
-            ("tasks",     "📋  Tarefas"),
-            ("study",     "📚  Estudar"),
-            ("flashcards", "🃏  Flashcards"),
-            ("shorts",    "📱  Shorts"),
-            ("history",   "📊  Histórico"),
-            ("settings",  "⚙️  Configurações"),
-        ]
-        for key, label in nav_items:
-            btn = ctk.CTkButton(
-                self.sidebar, text=label, height=42,
-                anchor="w", font=ctk.CTkFont(size=14),
-                corner_radius=8,
-                command=lambda k=key: self.show_frame(k),
-            )
-            btn.pack(fill="x", padx=14, pady=3)
-            self._nav_buttons[key] = btn
-
-        # Espaçador
-        ctk.CTkLabel(self.sidebar, text="").pack(expand=True)
-
-        # Botão Login
-        self.login_btn = ctk.CTkButton(
-            self.sidebar, text="🔑  Entrar / Cadastrar", height=40,
-            corner_radius=8, font=ctk.CTkFont(size=13),
-            command=lambda: self.show_frame("login"),
-        )
-        self.login_btn.pack(fill="x", padx=14, pady=(3, 8))
-
-        # Indicador de status de atualização
-        self.update_status_label = ctk.CTkLabel(
-            self.sidebar, text="",
-            font=ctk.CTkFont(size=10),
-            wraplength=200,
-        )
-        self.update_status_label.pack(fill="x", padx=14, pady=(0, 12))
-
-        # Content area
-        self.content = ctk.CTkFrame(self, corner_radius=0)
-        self.content.grid(row=0, column=1, sticky="nswe")
-        self.content.grid_columnconfigure(0, weight=1)
-        self.content.grid_rowconfigure(0, weight=1)
-
-    # ── registrar views ──────────────────────────────────────
-    def _register_views(self):
-        from views.login_view import LoginView
-        from views.pomodoro_view import PomodoroView
-        from views.tasks_view import TasksView
-        from views.study_view import StudyView
-        from views.history_view import HistoryView
-        from views.settings_view import SettingsView
-        from views.dashboard_view import DashboardView
-        from views.flashcards_view import FlashcardsView
-        from views.shorts_view import ShortsView
-
-        for ViewClass, key in [
-            (DashboardView, "dashboard"),
-            (PomodoroView, "pomodoro"),
-            (TasksView, "tasks"),
-            (StudyView, "study"),
-            (FlashcardsView, "flashcards"),
-            (ShortsView, "shorts"),
-            (HistoryView, "history"),
-            (SettingsView, "settings"),
-            (LoginView, "login"),
-        ]:
-            frame = ViewClass(self.content, self)
-            frame.grid(row=0, column=0, sticky="nswe")
-            self._frames[key] = frame
+        # Atualização automática em background
+        threading.Thread(target=self._auto_update_content, daemon=True).start()
 
     # ── navegação ────────────────────────────────────────────
-    def show_frame(self, name):
-        frame = self._frames.get(name)
-        if frame is None:
-            return
-        # Permitir refresh mesmo se já é o frame ativo
-        already_active = self._active_frame == name
-        self._active_frame = name
+    def _on_nav_change(self, e):
+        idx = e.control.selected_index
+        if idx < len(self.NAV_VIEWS):
+            self.show_view(self.NAV_VIEWS[idx])
 
-        # Highlight botão ativo
-        if not already_active:
-            theme = self.theme_mgr.get_theme()
-            for k, btn in self._nav_buttons.items():
-                if k == name:
-                    btn.configure(
-                        fg_color=theme["primary"], text_color=theme["text"])
-                else:
-                    btn.configure(fg_color="transparent",
-                                  text_color=theme["text_sec"])
-
-        # Atualizar conteúdo se o frame tiver refresh
-        if hasattr(frame, "on_show"):
-            frame.on_show()
-        frame.tkraise()
-
-    # ── tema ─────────────────────────────────────────────────
-    def _apply_theme(self):
+    def show_view(self, name: str):
+        self._current_view_name = name
         t = self.theme_mgr.get_theme()
-        self.configure(fg_color=t["bg"])
-        self.sidebar.configure(fg_color=t["sidebar"])
-        self.content.configure(fg_color=t["bg"])
-        self.logo_label.configure(text_color=t["primary"])
-        self.user_label.configure(text_color=t["text_sec"])
-        self.xp_sidebar_label.configure(text_color=t["accent"])
 
-        for btn in self._nav_buttons.values():
-            btn.configure(
-                fg_color="transparent",
-                hover_color=t["card"],
-                text_color=t["text_sec"],
-            )
-        self.login_btn.configure(
-            fg_color=t["card"],
-            hover_color=t["primary"],
-            text_color=t["text"],
+        # Atualizar app bar
+        titles = {
+            "dashboard": f"{t['emoji']} Dashboard",
+            "pomodoro": t.get("timer_title", "🍅 Pomodoro"),
+            "tasks": "📋 Tarefas",
+            "study": t.get("study_title", "📚 Estudar"),
+            "flashcards": "🃏 Flashcards",
+            "shorts": "📱 Shorts",
+            "history": "📊 Histórico",
+            "settings": "⚙️ Configurações",
+            "theory": "📖 Teorias ENEM",
+            "enem_editais": "📋 Editais do ENEM",
+            "login": "🔑 Login",
+            "more": "📋 Menu",
+        }
+        self._app_bar.title = ft.Text(
+            titles.get(name, name), size=18,
+            weight=ft.FontWeight.BOLD, color=t["text"],
         )
-        # Propagar para frames
-        for frame in self._frames.values():
-            if hasattr(frame, "apply_theme"):
-                frame.apply_theme(t)
+        self._app_bar.bgcolor = t["sidebar"]
 
-    def refresh_theme(self):
-        self._apply_theme()
-        if self._active_frame:
-            self.show_frame(self._active_frame)
-
-    # ── login / logout ───────────────────────────────────────
-    def set_user(self, user_dict):
-        self.current_user = user_dict
-        if user_dict:
-            self.user_label.configure(text=f"👤 {user_dict['display_name']}")
-            self.login_btn.configure(text="🚪  Sair")
-            self.login_btn.configure(command=self.logout)
-            # carregar tema do usuário
-            if user_dict.get("theme"):
-                self.theme_mgr.set_theme(user_dict["theme"])
-                self.refresh_theme()
-            # Atualizar streak ao logar
-            self.db.update_streak(user_dict["id"])
-            # XP info na sidebar
-            xp_info = self.db.get_xp_info(user_dict["id"])
-            streak = self.db.get_streak(user_dict["id"])
-            t = self.theme_mgr.get_theme()
-            lp = t.get("level_prefix", "Nv.")
-            self.xp_sidebar_label.configure(
-                text=f"⭐ {lp}{xp_info['level']}  •  🔥 {streak['streak']} dias"
+        # Botão voltar para sub-páginas
+        sub_pages = {"flashcards", "shorts",
+                     "history", "settings", "login", "theory",
+                     "enem_editais"}
+        if name in sub_pages:
+            self._app_bar.leading = ft.IconButton(
+                ft.Icons.ARROW_BACK, icon_color=t["text"],
+                on_click=lambda _: self.show_view("more"),
             )
         else:
-            self.user_label.configure(text="👤 Convidado")
-            self.login_btn.configure(text="🔑  Entrar / Cadastrar")
-            self.login_btn.configure(command=lambda: self.show_frame("login"))
-            self.xp_sidebar_label.configure(text="")
+            self._app_bar.leading = None
 
-    def logout(self):
-        self.current_user = None
-        self.set_user(None)
-        self.show_frame("dashboard")
-
-    def refresh_xp_sidebar(self):
-        """Atualiza indicador de XP/streak na sidebar."""
+        # XP na app bar
+        self._app_bar.actions = []
         uid = self.get_user_id()
         if uid:
             xp_info = self.db.get_xp_info(uid)
             streak = self.db.get_streak(uid)
-            t = self.theme_mgr.get_theme()
             lp = t.get("level_prefix", "Nv.")
-            self.xp_sidebar_label.configure(
-                text=f"⭐ {lp}{xp_info['level']}  •  🔥 {streak['streak']} dias"
+            self._app_bar.actions.append(
+                ft.Container(
+                    content=ft.Text(
+                        f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                        size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
+                    ),
+                    margin=ft.margin.only(right=15),
+                )
             )
 
+        # Atualizar índice do nav bar
+        if name in self.NAV_VIEWS:
+            self._nav_bar.selected_index = self.NAV_VIEWS.index(name)
+
+        # Criar ou pegar view cacheada (pomodoro é sempre cacheado)
+        if name == "more":
+            content = self._build_more_menu()
+        else:
+            if name == "pomodoro":
+                # Cache do pomodoro para manter o timer
+                if name not in self._views:
+                    self._views[name] = self._create_view(name)
+                view = self._views[name]
+            elif name in ("study", "theory", "enem_editais"):
+                # Cache para manter estado do quiz, teoria e editais
+                if name not in self._views:
+                    self._views[name] = self._create_view(name)
+                view = self._views[name]
+            else:
+                view = self._create_view(name)
+
+            if view is None:
+                self.page.update()
+                return
+
+            if hasattr(view, "on_show"):
+                view.on_show()
+            content = view.build()
+
+        self._content.content = content
+        self.page.update()
+
+    def _create_view(self, name):
+        if name == "dashboard":
+            from views.dashboard_view import DashboardView
+            return DashboardView(self)
+        elif name == "pomodoro":
+            from views.pomodoro_view import PomodoroView
+            return PomodoroView(self)
+        elif name == "tasks":
+            from views.tasks_view import TasksView
+            return TasksView(self)
+        elif name == "study":
+            from views.study_view import StudyView
+            return StudyView(self)
+        elif name == "flashcards":
+            from views.flashcards_view import FlashcardsView
+            return FlashcardsView(self)
+        elif name == "shorts":
+            from views.shorts_view import ShortsView
+            return ShortsView(self)
+        elif name == "history":
+            from views.history_view import HistoryView
+            return HistoryView(self)
+        elif name == "settings":
+            from views.settings_view import SettingsView
+            return SettingsView(self)
+        elif name == "theory":
+            from views.theory_view import TheoryView
+            return TheoryView(self)
+        elif name == "enem_editais":
+            from views.enem_editais_view import EnemEditaisView
+            return EnemEditaisView(self)
+        elif name == "login":
+            from views.login_view import LoginView
+            return LoginView(self)
+        return None
+
+    # ── menu "Mais" ──────────────────────────────────────────
+    def _build_more_menu(self):
+        t = self.theme_mgr.get_theme()
+
+        items = [
+            (ft.Icons.MENU_BOOK, "📖 Teorias ENEM", "theory"),
+            (ft.Icons.DESCRIPTION, "📋 Editais do ENEM", "enem_editais"),
+            (ft.Icons.STYLE, "🃏 Flashcards", "flashcards"),
+            (ft.Icons.VIDEO_LIBRARY, "📱 Shorts / Vídeos", "shorts"),
+            (ft.Icons.BAR_CHART, "📊 Histórico", "history"),
+            (ft.Icons.SETTINGS, "⚙️ Configurações", "settings"),
+        ]
+
+        if self.current_user:
+            user_text = f"👤 {self.current_user.get('display_name', 'Usuário')}"
+            items.append((ft.Icons.LOGOUT, "🚪 Sair", "_logout"))
+        else:
+            user_text = "👤 Convidado"
+            items.append((ft.Icons.LOGIN, "🔑 Entrar / Cadastrar", "login"))
+
+        tiles = []
+        for icon, label, target in items:
+            tiles.append(
+                ft.Container(
+                    content=ft.ListTile(
+                        leading=ft.Icon(icon, color=t["primary"]),
+                        title=ft.Text(label, color=t["text"], size=15),
+                        trailing=ft.Icon(ft.Icons.CHEVRON_RIGHT,
+                                         color=t["text_sec"]),
+                        on_click=lambda _, tgt=target: self._on_more_item(tgt),
+                    ),
+                    bgcolor=t["card"],
+                    border_radius=12,
+                )
+            )
+
+        return ft.Container(
+            bgcolor=t["bg"],
+            padding=20,
+            expand=True,
+            content=ft.Column(
+                controls=[
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon(ft.Icons.ACCOUNT_CIRCLE,
+                                    size=48, color=t["primary"]),
+                            ft.Column([
+                                ft.Text(
+                                    user_text, size=18, weight=ft.FontWeight.BOLD, color=t["text"]),
+                                ft.Text(
+                                    t.get(
+                                        "welcome", "Bem-vindo ao Switch Focus!"),
+                                    size=12, color=t["text_sec"],
+                                ),
+                            ], spacing=2),
+                        ], spacing=15),
+                        padding=ft.padding.only(bottom=15),
+                    ),
+                    ft.Divider(color=t["card"], height=1),
+                    *tiles,
+                ],
+                spacing=8,
+            ),
+        )
+
+    def _on_more_item(self, target):
+        if target == "_logout":
+            self.logout()
+        else:
+            self.show_view(target)
+
+    # ── user / auth ──────────────────────────────────────────
     def get_user_id(self):
         return self.current_user["id"] if self.current_user else None
 
-    # ── atualização automática de conteúdo ───────────────────
-    def _auto_update_content(self):
-        """Inicia atualização de vídeos em background ao abrir o app."""
-        started = self.updater.start_update()
-        if started:
-            self.update_status_label.configure(
-                text="🔄 Atualizando conteúdo...")
-            self._check_update_status()
-        else:
-            last = self.db.get_last_update("videos")
-            if last:
-                self.update_status_label.configure(
-                    text=f"✅ Atualizado: {last.strftime('%d/%m %H:%M')}"
-                )
+    def set_user(self, user_dict):
+        self.current_user = user_dict
+        if user_dict:
+            if user_dict.get("theme"):
+                self.theme_mgr.set_theme(user_dict["theme"])
+            self.db.update_streak(user_dict["id"])
+            self._apply_theme()
 
-    def _check_update_status(self):
-        """Verifica o progresso da atualização periodicamente."""
-        if self.updater.is_running:
-            t = self.theme_mgr.get_theme()
-            self.update_status_label.configure(
-                text=self.updater.progress,
-                text_color=t["accent"],
-            )
-            self.after(1500, self._check_update_status)
-        else:
-            t = self.theme_mgr.get_theme()
-            color = t["success"] if self.updater.status == "done" else t["danger"]
-            self.update_status_label.configure(
-                text=self.updater.progress,
-                text_color=color,
-            )
-            # Limpar a mensagem após 10 segundos
-            self.after(10000, lambda: self.update_status_label.configure(
-                text=f"✅ Conteúdo atualizado",
-                text_color=t["text_sec"],
-            ))
+    def logout(self):
+        self.current_user = None
+        self._apply_theme()
+        self.show_view("dashboard")
+
+    def refresh_xp_sidebar(self):
+        """Atualiza XP na appbar."""
+        if self._current_view_name:
+            uid = self.get_user_id()
+            if uid:
+                t = self.theme_mgr.get_theme()
+                xp_info = self.db.get_xp_info(uid)
+                streak = self.db.get_streak(uid)
+                lp = t.get("level_prefix", "Nv.")
+                self._app_bar.actions = [
+                    ft.Container(
+                        content=ft.Text(
+                            f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                            size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
+                        ),
+                        margin=ft.margin.only(right=15),
+                    )
+                ]
+
+    # ── tema ─────────────────────────────────────────────────
+    def _apply_theme(self):
+        t = self.theme_mgr.get_theme()
+        self.page.bgcolor = t["bg"]
+        self._content.bgcolor = t["bg"]
+        self._nav_bar.bgcolor = t["sidebar"]
+        self._nav_bar.indicator_color = t["primary"]
+        self._app_bar.bgcolor = t["sidebar"]
+
+    def refresh_theme(self):
+        self._apply_theme()
+        # Limpar cache de views para reconstruir com novo tema
+        self._views = {}
+        if self._current_view_name:
+            self.show_view(self._current_view_name)
+
+    # ── helpers UI ───────────────────────────────────────────
+    def show_snackbar(self, message, bgcolor=None):
+        t = self.theme_mgr.get_theme()
+        self.page.snack_bar = ft.SnackBar(
+            content=ft.Text(message, color="#FFFFFF"),
+            bgcolor=bgcolor or t["primary"],
+        )
+        self.page.snack_bar.open = True
+        self.page.update()
+
+    def show_dialog(self, title, message, on_ok=None):
+        def close(e):
+            dlg.open = False
+            self.page.update()
+            if on_ok:
+                on_ok()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Text(message),
+            actions=[ft.TextButton("OK", on_click=close)],
+        )
+        self.page.overlay.append(dlg)
+        dlg.open = True
+        self.page.update()
+
+    def show_confirm(self, title, message, on_confirm):
+        def close(e):
+            dlg.open = False
+            self.page.update()
+
+        def confirm(e):
+            dlg.open = False
+            self.page.update()
+            on_confirm()
+
+        dlg = ft.AlertDialog(
+            title=ft.Text(title),
+            content=ft.Text(message),
+            actions=[
+                ft.TextButton("Cancelar", on_click=close),
+                ft.TextButton("Confirmar", on_click=confirm),
+            ],
+        )
+        self.page.overlay.append(dlg)
+        dlg.open = True
+        self.page.update()
+
+    # ── auto update ──────────────────────────────────────────
+    def _auto_update_content(self):
+        try:
+            self.updater.start_update()
+        except Exception:
+            pass

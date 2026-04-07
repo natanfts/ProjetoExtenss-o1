@@ -1,62 +1,57 @@
-import customtkinter as ctk
-from CTkMessagebox import CTkMessagebox
+import flet as ft
 from datetime import datetime
 
 
-class TasksView(ctk.CTkFrame):
-    def __init__(self, parent, app):
-        super().__init__(parent, corner_radius=0)
+class TasksView:
+    """Gerenciador de Tarefas com CRUD completo."""
+
+    def __init__(self, app):
         self.app = app
         self.db = app.db
         self._filter = "todas"
-        self._build()
 
-    def _build(self):
-        self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
+    def on_show(self):
+        pass
 
-        # Header
-        top = ctk.CTkFrame(self, fg_color="transparent")
-        top.grid(row=0, column=0, sticky="ew", padx=25, pady=(20, 10))
-        top.grid_columnconfigure(1, weight=1)
+    def build(self):
+        t = self.app.theme_mgr.get_theme()
+        self._theme = t
 
-        self.title_lb = ctk.CTkLabel(
-            top, text="📋 Gerenciador de Tarefas",
-            font=ctk.CTkFont(size=24, weight="bold"),
+        # Filtro
+        filter_dd = ft.Dropdown(
+            value="Todas", width=140, height=45,
+            options=[ft.dropdown.Option(v) for v in
+                     ["Todas", "Pendentes", "Concluídas", "Alta", "Média", "Baixa"]],
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], text_size=13,
+            on_select=self._on_filter,
         )
-        self.title_lb.grid(row=0, column=0, sticky="w")
 
-        btn_area = ctk.CTkFrame(top, fg_color="transparent")
-        btn_area.grid(row=0, column=2, sticky="e")
-
-        self.filter_menu = ctk.CTkOptionMenu(
-            btn_area, values=["Todas", "Pendentes",
-                              "Concluídas", "Alta", "Média", "Baixa"],
-            width=130, command=self._on_filter,
+        add_btn = ft.ElevatedButton(
+            content=ft.Text("＋ Nova Tarefa"), height=42,
+            bgcolor=t["button"], color="#FFFFFF",
+            style=ft.ButtonStyle(shape=ft.RoundedRectangleBorder(radius=10)),
+            on_click=lambda _: self._open_add_dialog(),
         )
-        self.filter_menu.grid(row=0, column=0, padx=5)
 
-        self.add_btn = ctk.CTkButton(
-            btn_area, text="＋ Nova Tarefa", width=140, height=36,
-            font=ctk.CTkFont(size=13, weight="bold"),
-            command=self._open_add_dialog,
-        )
-        self.add_btn.grid(row=0, column=1, padx=5)
+        self._task_list = ft.Column(
+            spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+        self._load_tasks()
 
-        # Lista de tarefas
-        self.scroll = ctk.CTkScrollableFrame(self)
-        self.scroll.grid(row=1, column=0, sticky="nswe", padx=25, pady=(0, 20))
-        self.scroll.grid_columnconfigure(0, weight=1)
-
-        self.empty_label = ctk.CTkLabel(
-            self.scroll, text="Nenhuma tarefa encontrada.\nClique em '＋ Nova Tarefa' para começar!",
-            font=ctk.CTkFont(size=14),
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            content=ft.Column([
+                ft.Row([filter_dd, add_btn],
+                       alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                self._task_list,
+            ], expand=True, spacing=10),
         )
 
     # ── listagem ─────────────────────────────────────────────
     def _load_tasks(self):
-        for w in self.scroll.winfo_children():
-            w.destroy()
+        t = self._theme
+        self._task_list.controls.clear()
 
         status = None
         if self._filter == "pendentes":
@@ -67,61 +62,29 @@ class TasksView(ctk.CTkFrame):
         tasks = self.db.get_tasks(
             user_id=self.app.get_user_id(), status=status)
 
-        # Filtrar por prioridade se selecionado
         if self._filter in ("alta", "média", "baixa"):
-            tasks = [t for t in tasks if t.get("priority") == self._filter]
+            tasks = [tk for tk in tasks if tk.get("priority") == self._filter]
 
         if not tasks:
-            self.empty_label = ctk.CTkLabel(
-                self.scroll,
-                text="Nenhuma tarefa encontrada.\nClique em '＋ Nova Tarefa' para começar!",
-                font=ctk.CTkFont(size=14),
+            self._task_list.controls.append(
+                ft.Container(
+                    alignment=ft.Alignment.CENTER,
+                    padding=40,
+                    content=ft.Text(
+                        "Nenhuma tarefa encontrada.\nToque em '＋ Nova Tarefa' para começar!",
+                        size=14, color=t["text_sec"], text_align=ft.TextAlign.CENTER,
+                    ),
+                )
             )
-            self.empty_label.pack(pady=40)
             return
 
         for task in tasks:
-            self._render_task(task)
+            self._task_list.controls.append(self._render_task(task, t))
 
-    def _render_task(self, task):
-        t = self.app.theme_mgr.get_theme()
-        card = ctk.CTkFrame(self.scroll, corner_radius=12,
-                            fg_color=t["card"], height=80)
-        card.pack(fill="x", pady=4)
-        card.pack_propagate(False)
-
-        inner = ctk.CTkFrame(card, fg_color="transparent")
-        inner.pack(fill="both", expand=True, padx=15, pady=10)
-        inner.grid_columnconfigure(1, weight=1)
-
-        # Checkbox concluir
+    def _render_task(self, task, t):
         done = task["status"] == "concluída"
-        check_text = "✅" if done else "⬜"
-        check_btn = ctk.CTkButton(
-            inner, text=check_text, width=36, height=36,
-            fg_color="transparent", hover_color=t["card"],
-            font=ctk.CTkFont(size=18),
-            command=lambda tid=task["id"]: self._toggle_complete(tid, done),
-        )
-        check_btn.grid(row=0, column=0, rowspan=2, padx=(0, 10))
-
-        # Prioridade emoji
         prio = {"alta": "🔴", "média": "🟡", "baixa": "🟢"}.get(
             task["priority"], "⚪")
-
-        title_text = f"{prio} {task['title']}"
-        if done:
-            title_text = f"~~{task['title']}~~"
-
-        title = ctk.CTkLabel(
-            inner, text=title_text,
-            font=ctk.CTkFont(size=15, weight="bold", overstrike=done),
-            anchor="w", text_color=t["text_sec"] if done else t["text"],
-        )
-        title.grid(row=0, column=1, sticky="w")
-
-        desc_text = task.get("description", "") or ""
-        pom_text = f"🍅 {task['pomodoros_done']}/{task['pomodoros_est']}"
 
         # Deadline
         deadline_text = ""
@@ -131,38 +94,48 @@ class TasksView(ctk.CTkFrame):
                 dl = datetime.strptime(deadline, "%Y-%m-%d")
                 days_left = (dl.date() - datetime.now().date()).days
                 if days_left < 0:
-                    deadline_text = f"  •  ⚠️ Atrasada ({abs(days_left)}d)"
+                    deadline_text = f" ⚠️ Atrasada ({abs(days_left)}d)"
                 elif days_left == 0:
-                    deadline_text = "  •  🚨 Vence hoje!"
+                    deadline_text = " 🚨 Vence hoje!"
                 elif days_left <= 3:
-                    deadline_text = f"  •  ⏳ {days_left}d restantes"
+                    deadline_text = f" ⏳ {days_left}d"
                 else:
-                    deadline_text = f"  •  📅 {dl.strftime('%d/%m')}"
+                    deadline_text = f" 📅 {dl.strftime('%d/%m')}"
             except ValueError:
                 pass
 
-        sub = ctk.CTkLabel(
-            inner, text=f"{desc_text}  {pom_text}{deadline_text}".strip(),
-            font=ctk.CTkFont(size=12),
-            anchor="w", text_color=t["text_sec"],
+        pom_text = f"🍅 {task['pomodoros_done']}/{task['pomodoros_est']}"
+        desc = task.get("description") or ""
+        sub_text = f"{desc}  {pom_text}{deadline_text}".strip()
+
+        return ft.Container(
+            bgcolor=t["card"], border_radius=12,
+            padding=ft.padding.symmetric(horizontal=15, vertical=12),
+            on_click=lambda _, tk=task: self._open_edit_dialog(tk),
+            content=ft.Row([
+                ft.IconButton(
+                    icon=ft.Icons.CHECK_CIRCLE if done else ft.Icons.CIRCLE_OUTLINED,
+                    icon_color=t["success"] if done else t["text_sec"],
+                    icon_size=28,
+                    on_click=lambda _, tid=task["id"], d=done: self._toggle_complete(
+                        tid, d),
+                ),
+                ft.Column([
+                    ft.Text(
+                        f"{prio} {task['title']}",
+                        size=15, weight=ft.FontWeight.BOLD,
+                        color=t["text_sec"] if done else t["text"],
+                        decoration=ft.TextDecoration.LINE_THROUGH if done else None,
+                    ),
+                    ft.Text(sub_text, size=12, color=t["text_sec"]),
+                ], spacing=2, expand=True),
+                ft.IconButton(
+                    icon=ft.Icons.DELETE_OUTLINE,
+                    icon_color=t["danger"], icon_size=22,
+                    on_click=lambda _, tid=task["id"]: self._delete(tid),
+                ),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
         )
-        sub.grid(row=1, column=1, sticky="w")
-
-        # Ações
-        actions = ctk.CTkFrame(inner, fg_color="transparent")
-        actions.grid(row=0, column=2, rowspan=2, sticky="e")
-
-        ctk.CTkButton(
-            actions, text="✏️", width=34, height=34,
-            fg_color="transparent", hover_color=t["secondary"],
-            command=lambda tid=task: self._open_edit_dialog(tid),
-        ).pack(side="left", padx=2)
-
-        ctk.CTkButton(
-            actions, text="🗑️", width=34, height=34,
-            fg_color="transparent", hover_color=t["danger"],
-            command=lambda tid=task["id"]: self._delete(tid),
-        ).pack(side="left", padx=2)
 
     # ── ações ────────────────────────────────────────────────
     def _toggle_complete(self, task_id, currently_done):
@@ -170,7 +143,6 @@ class TasksView(ctk.CTkFrame):
             self.db.update_task(task_id, status="pendente", completed_at=None)
         else:
             self.db.complete_task(task_id)
-            # Gamificação: XP ao completar tarefa
             uid = self.app.get_user_id()
             if uid:
                 self.db.add_xp(uid, 15, "task", "Tarefa concluída")
@@ -178,21 +150,25 @@ class TasksView(ctk.CTkFrame):
                 self.db.check_and_grant_achievements(uid)
                 self.app.refresh_xp_sidebar()
         self._load_tasks()
+        self.app.page.update()
 
     def _delete(self, task_id):
-        msg = CTkMessagebox(
-            title="Confirmar", message="Deseja excluir esta tarefa?",
-            icon="question", option_1="Cancelar", option_2="Excluir",
+        self.app.show_confirm(
+            "Confirmar", "Deseja excluir esta tarefa?",
+            on_confirm=lambda: self._do_delete(task_id),
         )
-        if msg.get() == "Excluir":
-            self.db.delete_task(task_id)
-            self._load_tasks()
 
-    def _on_filter(self, value):
-        self._filter = value.lower()
+    def _do_delete(self, task_id):
+        self.db.delete_task(task_id)
         self._load_tasks()
+        self.app.page.update()
 
-    # ── diálogo adicionar ────────────────────────────────────
+    def _on_filter(self, e):
+        self._filter = e.control.value.lower()
+        self._load_tasks()
+        self.app.page.update()
+
+    # ── diálogo adicionar / editar ───────────────────────────
     def _open_add_dialog(self):
         self._task_dialog("Adicionar Tarefa")
 
@@ -200,129 +176,102 @@ class TasksView(ctk.CTkFrame):
         self._task_dialog("Editar Tarefa", task)
 
     def _task_dialog(self, title, task=None):
-        t = self.app.theme_mgr.get_theme()
-        win = ctk.CTkToplevel(self)
-        win.title(title)
-        win.geometry("440x500")
-        win.transient(self)
-        win.grab_set()
-        win.configure(fg_color=t["bg"])
+        t = self._theme
 
-        ctk.CTkLabel(win, text=title, font=ctk.CTkFont(size=18, weight="bold"),
-                     text_color=t["primary"]).pack(pady=(18, 12))
+        title_field = ft.TextField(
+            label="Título da tarefa", width=320, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+            value=task["title"] if task else "",
+        )
+        desc_field = ft.TextField(
+            label="Descrição (opcional)", width=320, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+            value=task.get("description", "") if task else "",
+        )
+        prio_dd = ft.Dropdown(
+            label="Prioridade", width=320, height=55,
+            value=task["priority"] if task else "média",
+            options=[ft.dropdown.Option(v)
+                     for v in ["alta", "média", "baixa"]],
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+        )
+        pom_field = ft.TextField(
+            label="Pomodoros estimados", width=320, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+            value=str(task["pomodoros_est"]) if task else "1",
+            keyboard_type=ft.KeyboardType.NUMBER,
+        )
+        dl_field = ft.TextField(
+            label="📅 Prazo (dd/mm/aaaa)", width=320, height=50,
+            bgcolor=t["entry_bg"], border_color=t["entry_border"],
+            color=t["text"], label_style=ft.TextStyle(color=t["text_sec"]),
+            value="",
+        )
+        if task and task.get("deadline"):
+            try:
+                dl = datetime.strptime(task["deadline"], "%Y-%m-%d")
+                dl_field.value = dl.strftime("%d/%m/%Y")
+            except ValueError:
+                pass
 
-        title_e = ctk.CTkEntry(win, placeholder_text="Título da tarefa", width=360, height=40,
-                               fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
-        title_e.pack(pady=6)
-
-        desc_e = ctk.CTkEntry(win, placeholder_text="Descrição (opcional)", width=360, height=40,
-                              fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
-        desc_e.pack(pady=6)
-
-        prio_var = ctk.StringVar(value="média")
-        prio = ctk.CTkOptionMenu(win, variable=prio_var, values=[
-                                 "alta", "média", "baixa"], width=360)
-        prio.configure(fg_color=t["button"], button_color=t["button_hover"])
-        prio.pack(pady=6)
-
-        pom_frame = ctk.CTkFrame(win, fg_color="transparent")
-        pom_frame.pack(pady=6)
-        ctk.CTkLabel(pom_frame, text="Pomodoros estimados:",
-                     text_color=t["text"]).pack(side="left", padx=5)
-        pom_e = ctk.CTkEntry(pom_frame, width=60, height=36,
-                             fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
-        pom_e.insert(0, "1")
-        pom_e.pack(side="left")
-
-        # Campo de deadline
-        dl_frame = ctk.CTkFrame(win, fg_color="transparent")
-        dl_frame.pack(pady=6)
-        ctk.CTkLabel(dl_frame, text="📅 Prazo (dd/mm/aaaa):",
-                     text_color=t["text"]).pack(side="left", padx=5)
-        dl_e = ctk.CTkEntry(dl_frame, width=130, height=36,
-                            placeholder_text="ex: 15/06/2026",
-                            fg_color=t["entry_bg"], border_color=t["entry_border"], text_color=t["text"])
-        dl_e.pack(side="left")
-
-        if task:
-            title_e.insert(0, task["title"])
-            desc_e.insert(0, task.get("description") or "")
-            prio_var.set(task["priority"])
-            pom_e.delete(0, "end")
-            pom_e.insert(0, str(task["pomodoros_est"]))
-            if task.get("deadline"):
-                try:
-                    dl = datetime.strptime(task["deadline"], "%Y-%m-%d")
-                    dl_e.insert(0, dl.strftime("%d/%m/%Y"))
-                except ValueError:
-                    pass
-
-        def save():
-            t_title = title_e.get().strip()
+        def save(e):
+            t_title = title_field.value.strip() if title_field.value else ""
             if not t_title:
-                CTkMessagebox(title="Atenção",
-                              message="Título é obrigatório.", icon="warning")
+                self.app.show_snackbar("⚠️ Título é obrigatório.")
                 return
             try:
-                pom_val = int(pom_e.get())
-            except ValueError:
+                pom_val = int(pom_field.value)
+            except (ValueError, TypeError):
                 pom_val = 1
 
-            # Processar deadline
             deadline_val = None
-            dl_text = dl_e.get().strip()
+            dl_text = dl_field.value.strip() if dl_field.value else ""
             if dl_text:
                 try:
                     deadline_val = datetime.strptime(
                         dl_text, "%d/%m/%Y").strftime("%Y-%m-%d")
                 except ValueError:
-                    CTkMessagebox(title="Formato inválido",
-                                  message="Use o formato dd/mm/aaaa para o prazo.", icon="warning")
+                    self.app.show_snackbar("⚠️ Use formato dd/mm/aaaa")
                     return
 
             if task:
                 self.db.update_task(
                     task["id"], title=t_title,
-                    description=desc_e.get().strip(),
-                    priority=prio_var.get(),
-                    pomodoros_est=pom_val,
-                    deadline=deadline_val,
+                    description=desc_field.value.strip() if desc_field.value else "",
+                    priority=prio_dd.value,
+                    pomodoros_est=pom_val, deadline=deadline_val,
                 )
             else:
                 self.db.create_task(
-                    t_title, desc_e.get().strip(),
-                    prio_var.get(), pom_val,
-                    user_id=self.app.get_user_id(),
-                    deadline=deadline_val,
+                    t_title, desc_field.value.strip() if desc_field.value else "",
+                    prio_dd.value, pom_val,
+                    user_id=self.app.get_user_id(), deadline=deadline_val,
                 )
-            win.destroy()
+
+            dlg.open = False
+            self.app.page.update()
             self._load_tasks()
+            self.app.page.update()
 
-        ctk.CTkButton(
-            win, text="💾 Salvar", width=360, height=42,
-            font=ctk.CTkFont(size=15, weight="bold"),
-            fg_color=t["button"], hover_color=t["button_hover"],
-            command=save,
-        ).pack(pady=(18, 10))
+        def close(e):
+            dlg.open = False
+            self.app.page.update()
 
-    # ── hooks ────────────────────────────────────────────────
-    def on_show(self):
-        self._load_tasks()
-        # Atalho: Ctrl+N para nova tarefa
-        self.app.bind("<Control-n>", self._on_ctrl_n)
-
-    def _on_ctrl_n(self, event=None):
-        """Atalho: Ctrl+N para criar nova tarefa."""
-        if not self.winfo_ismapped():
-            return
-        self._open_add_dialog()
-
-    def apply_theme(self, t):
-        self.configure(fg_color=t["bg"])
-        self.title_lb.configure(text_color=t["primary"])
-        self.add_btn.configure(
-            fg_color=t["button"], hover_color=t["button_hover"])
-        self.scroll.configure(fg_color=t["bg"])
-        self.filter_menu.configure(
-            fg_color=t["button"], button_color=t["button_hover"])
-        self._load_tasks()
+        dlg = ft.AlertDialog(
+            title=ft.Text(title, weight=ft.FontWeight.BOLD),
+            content=ft.Column([
+                title_field, desc_field, prio_dd, pom_field, dl_field,
+            ], tight=True, spacing=8),
+            actions=[
+                ft.TextButton("Cancelar", on_click=close),
+                ft.ElevatedButton(
+                    "💾 Salvar", bgcolor=t["button"], color="#FFFFFF", on_click=save),
+            ],
+        )
+        self.app.page.overlay.append(dlg)
+        dlg.open = True
+        self.app.page.update()
