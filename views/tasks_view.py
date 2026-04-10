@@ -125,7 +125,8 @@ class TasksView:
                         f"{prio} {task['title']}",
                         size=15, weight=ft.FontWeight.BOLD,
                         color=t["text_sec"] if done else t["text"],
-                        decoration=ft.TextDecoration.LINE_THROUGH if done else None,
+                        style=ft.TextStyle(
+                            decoration=ft.TextDecoration.LINE_THROUGH) if done else None,
                     ),
                     ft.Text(sub_text, size=12, color=t["text_sec"]),
                 ], spacing=2, expand=True),
