@@ -1,4 +1,24 @@
 import flet as ft
+import logging
+import re
+
+logger = logging.getLogger("ShortsView")
+
+# WebView disponível em iOS, Android, macOS e Web
+try:
+    import flet_webview as fwv
+    _HAS_WEBVIEW = True
+except ImportError:
+    _HAS_WEBVIEW = False
+
+_YT_ID_RE = re.compile(
+    r"(?:youtu\.be/|youtube\.com/(?:watch\?v=|embed/|shorts/))([a-zA-Z0-9_-]{11})"
+)
+
+
+def _extract_video_id(url: str) -> str | None:
+    m = _YT_ID_RE.search(url)
+    return m.group(1) if m else None
 
 
 class ShortsView:
@@ -8,12 +28,17 @@ class ShortsView:
         self.app = app
         self.db = app.db
         self._category = "enem"
+        self._playing_url = None  # URL do vídeo em reprodução (modo embutido)
 
     def on_show(self):
         pass
 
     def build(self):
         t = self.app.theme_mgr.get_theme()
+
+        # Se há vídeo em reprodução (modo embutido), mostra o player
+        if self._playing_url and self._can_embed():
+            return self._build_player(t)
 
         # Tabs de categoria
         cat_btns = []
@@ -101,9 +126,66 @@ class ShortsView:
 
     def _set_category(self, cat):
         self._category = cat
+        self._playing_url = None
         self.app.show_view("shorts")
 
+    def _can_embed(self) -> bool:
+        """Verifica se WebView está disponível na plataforma atual."""
+        if not _HAS_WEBVIEW:
+            return False
+        # WebView não funciona no Windows/Linux desktop
+        platform = self.app.page.platform
+        if platform in (ft.PagePlatform.WINDOWS, ft.PagePlatform.LINUX):
+            return False
+        return True
+
     def _open_video(self, url):
-        if url:
-            import webbrowser
-            webbrowser.open(url)
+        if not url:
+            return
+        if self._can_embed() and _extract_video_id(url):
+            self._playing_url = url
+            self.app.show_view("shorts")
+        else:
+            self.app.page.launch_url(url)
+
+    def _close_player(self, e=None):
+        self._playing_url = None
+        self.app.show_view("shorts")
+
+    def _build_player(self, t):
+        """Constrói o player embutido com WebView do YouTube."""
+        video_id = _extract_video_id(self._playing_url)
+        embed_url = f"https://www.youtube.com/embed/{video_id}?autoplay=1&rel=0"
+
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            padding=ft.padding.symmetric(horizontal=10, vertical=10),
+            content=ft.Column([
+                ft.Row([
+                    ft.IconButton(
+                        icon=ft.Icons.ARROW_BACK,
+                        icon_color=t["text"],
+                        on_click=self._close_player,
+                    ),
+                    ft.Text("📱 Player", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["text"],
+                            expand=True),
+                    ft.IconButton(
+                        icon=ft.Icons.OPEN_IN_BROWSER,
+                        icon_color=t["text_sec"],
+                        tooltip="Abrir no navegador",
+                        on_click=lambda _: self.app.page.launch_url(
+                            self._playing_url),
+                    ),
+                ]),
+                ft.Container(
+                    expand=True,
+                    border_radius=12,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                    content=fwv.WebView(
+                        url=embed_url,
+                        expand=True,
+                    ),
+                ),
+            ], spacing=8),
+        )
