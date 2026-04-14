@@ -243,6 +243,8 @@ class APIService:
                 })
             return questions
         except Exception:
+            logger.warning("Erro ao buscar trivia (categoria=%s)",
+                           category_name, exc_info=True)
             return []
 
     # ── busca de vídeos no YouTube ───────────────────────────
@@ -273,6 +275,8 @@ class APIService:
                 videos.append(video)
             return videos
         except Exception:
+            logger.warning(
+                "Erro ao buscar vídeos YouTube (query=%s)", query, exc_info=True)
             return []
 
     @staticmethod

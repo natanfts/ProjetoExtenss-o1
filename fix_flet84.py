@@ -1,6 +1,9 @@
 """Script para corrigir incompatibilidades com Flet 0.84."""
 import re
 import glob
+import logging
+
+logger = logging.getLogger("FixFlet84")
 
 files = glob.glob('views/*.py') + ['main.py']
 total = 0
@@ -34,8 +37,8 @@ for fpath in files:
         with open(fpath, 'w', encoding='utf-8') as f:
             f.write(content)
         total += 1
-        print(f'Fixed: {fpath}')
+        logger.info('Fixed: %s', fpath)
     else:
-        print(f'OK: {fpath}')
+        logger.debug('OK: %s', fpath)
 
-print(f'\nTotal files modified: {total}')
+logger.info('Total files modified: %d', total)
