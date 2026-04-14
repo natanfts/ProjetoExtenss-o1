@@ -2,7 +2,8 @@ import sqlite3
 import hashlib
 import json
 import os
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 
 from enem_content import EXPANDED_QUESTIONS, EXPANDED_FLASHCARDS
 
@@ -804,8 +805,25 @@ class DatabaseManager:
 
     # ── Usuários ─────────────────────────────────────────────
     @staticmethod
-    def _hash(password: str) -> str:
-        return hashlib.sha256(password.encode()).hexdigest()
+    def _hash(password: str, salt: bytes | None = None) -> str:
+        """Hash com pbkdf2_hmac + salt. Retorna 'salt_hex$hash_hex'."""
+        if salt is None:
+            salt = secrets.token_bytes(16)
+        h = hashlib.pbkdf2_hmac(
+            'sha256', password.encode(), salt, iterations=260_000)
+        return salt.hex() + '$' + h.hex()
+
+    @staticmethod
+    def _verify_password(password: str, stored_hash: str) -> bool:
+        """Verifica senha contra hash armazenado (compatível com formato antigo SHA-256)."""
+        if '$' in stored_hash:
+            # Formato novo: salt$hash
+            salt_hex, _ = stored_hash.split('$', 1)
+            salt = bytes.fromhex(salt_hex)
+            return DatabaseManager._hash(password, salt) == stored_hash
+        else:
+            # Formato legado SHA-256 (sem salt)
+            return hashlib.sha256(password.encode()).hexdigest() == stored_hash
 
     def create_user(self, username, password, display_name=None):
         conn = self._conn()
@@ -827,11 +845,23 @@ class DatabaseManager:
     def authenticate(self, username, password):
         conn = self._conn()
         user = conn.execute(
-            "SELECT * FROM users WHERE username=? AND password_hash=?",
-            (username, self._hash(password)),
+            "SELECT * FROM users WHERE username=?", (username,),
         ).fetchone()
+        if not user:
+            conn.close()
+            return None
+        if not self._verify_password(password, user['password_hash']):
+            conn.close()
+            return None
+        # Migrar hash legado SHA-256 para pbkdf2 automaticamente
+        if '$' not in user['password_hash']:
+            conn.execute(
+                "UPDATE users SET password_hash=? WHERE id=?",
+                (self._hash(password), user['id']),
+            )
+            conn.commit()
         conn.close()
-        return dict(user) if user else None
+        return dict(user)
 
     def update_user_theme(self, user_id, theme):
         conn = self._conn()
@@ -881,9 +911,14 @@ class DatabaseManager:
         return [dict(r) for r in rows]
 
     def update_task(self, task_id, **kwargs):
+        ALLOWED_COLS = {'title', 'description', 'status', 'priority',
+                        'pomodoros_est', 'pomodoros_done', 'deadline', 'completed_at'}
+        safe = {k: v for k, v in kwargs.items() if k in ALLOWED_COLS}
+        if not safe:
+            return
         conn = self._conn()
-        sets = ", ".join(f"{k}=?" for k in kwargs)
-        vals = list(kwargs.values()) + [task_id]
+        sets = ", ".join(f"{k}=?" for k in safe)
+        vals = list(safe.values()) + [task_id]
         conn.execute(f"UPDATE tasks SET {sets} WHERE id=?", vals)
         conn.commit()
         conn.close()
@@ -1024,10 +1059,13 @@ class DatabaseManager:
 
     def search_content(self, query, content_type=None):
         conn = self._conn()
+        # Sanitizar caracteres especiais do LIKE
+        safe_q = query.replace('%', '\\%').replace('_', '\\_')
+        like_q = f"%{safe_q}%"
         q = """SELECT * FROM content
-               WHERE (question LIKE ? OR topic LIKE ? OR subject LIKE ?
-                      OR video_title LIKE ?)"""
-        params = [f"%{query}%"] * 4
+               WHERE (question LIKE ? ESCAPE '\\' OR topic LIKE ? ESCAPE '\\'
+                      OR subject LIKE ? ESCAPE '\\' OR video_title LIKE ? ESCAPE '\\')"""
+        params = [like_q] * 4
         if content_type:
             q += " AND content_type=?"
             params.append(content_type)
@@ -1496,11 +1534,11 @@ class DatabaseManager:
             if ach["xp_reward"] > 0:
                 self.add_xp(user_id, ach["xp_reward"],
                             "achievement", f"Conquista: {ach['title']}")
-            conn.close()
             return dict(ach)
         except Exception:
-            conn.close()
             return None
+        finally:
+            conn.close()
 
     def has_achievement(self, user_id: int, achievement_key: str) -> bool:
         if not user_id:
@@ -1721,7 +1759,7 @@ class DatabaseManager:
                        * (0.08 + (5 - quality) * 0.02))
 
         next_review = (
-            datetime.now() + __import__('datetime').timedelta(days=interval)).isoformat()
+            datetime.now() + timedelta(days=interval)).isoformat()
 
         conn.execute(
             """INSERT INTO flashcard_reviews
@@ -1971,7 +2009,7 @@ class DatabaseManager:
         user = conn.execute(
             "SELECT password_hash FROM users WHERE id=?", (user_id,)
         ).fetchone()
-        if not user or user["password_hash"] != self._hash(old_password):
+        if not user or not self._verify_password(old_password, user["password_hash"]):
             conn.close()
             return False
         conn.execute(

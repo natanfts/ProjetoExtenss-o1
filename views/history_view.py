@@ -30,16 +30,16 @@ class HistoryView:
             )
 
         # ── Estatísticas gerais ──────────────────────────────
-        stats = self.db.get_session_stats(uid)
-        xp_info = self.db.get_xp_info(uid)
-        streak = self.db.get_streak(uid)
+        stats = self.db.get_session_stats(uid) or {}
+        xp_info = self.db.get_xp_info(uid) or {"level": 1}
+        streak = self.db.get_streak(uid) or {"streak": 0, "longest": 0}
 
         stat_cards = []
         stat_data = [
             ("🍅", "Pomodoros", str(stats.get("focus_count", 0))),
             ("⏱️", "Min. Foco", str(stats.get("focus_minutes", 0))),
             ("📅", "Dias Ativos", str(stats.get("days_active", 0))),
-            ("⭐", "Nível", str(xp_info["level"])),
+            ("⭐", "Nível", str(xp_info.get("level", 1))),
         ]
         for emoji, label, value in stat_data:
             stat_cards.append(

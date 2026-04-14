@@ -19,50 +19,99 @@ class DashboardView:
         if not uid:
             return self._build_guest(t)
 
-        # Atualizar streak
         self.db.update_streak(uid)
+        today_stats = self.db.get_today_stats(uid)
 
-        # ── Saudação ─────────────────────────────────────────
+        greeting_text = self._build_greeting(t)
+        xp_card = self._build_xp_card(t, uid)
+        goal_cards, celebration_row = self._build_goals(t, uid, today_stats)
+        stat_cards = self._build_stats(t, today_stats)
+        new_ach_cards, ach_badges, earned, all_achs = self._build_achievements(
+            t, uid)
+        week_bars = self._build_weekly_activity(t, uid)
+        action_btns = self._build_quick_actions(t)
+
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            content=ft.Column(
+                controls=[
+                    ft.Text(greeting_text, size=20,
+                            weight=ft.FontWeight.BOLD, color=t["text"]),
+                    ft.Text(datetime.now().strftime("%A, %d de %B de %Y").capitalize(),
+                            size=12, color=t["text_sec"]),
+                    xp_card,
+                    ft.Text("🎯 Metas de Hoje", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    *goal_cards,
+                    *celebration_row,
+                    ft.Text("📊 Resumo de Hoje", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(stat_cards, spacing=6),
+                    *new_ach_cards,
+                    ft.Text(f"🏆 Conquistas ({len(earned)}/{len(all_achs)})",
+                            size=18, weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(ach_badges, wrap=True, spacing=6, run_spacing=6),
+                    ft.Text("📈 Atividade Semanal", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Container(
+                        bgcolor=t["card"], border_radius=12, padding=15,
+                        content=ft.Row(
+                            week_bars, alignment=ft.MainAxisAlignment.SPACE_AROUND),
+                    ),
+                    ft.Text("⚡ Ações Rápidas", size=18,
+                            weight=ft.FontWeight.BOLD, color=t["primary"]),
+                    ft.Row(action_btns, spacing=6),
+                    ft.Container(height=10),
+                ],
+                spacing=10,
+                scroll=ft.ScrollMode.AUTO,
+            ),
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+        )
+
+    # ── Helpers do build() ───────────────────────────────────
+
+    def _build_greeting(self, t):
         hour = datetime.now().hour
         greeting = "Bom dia" if hour < 12 else (
             "Boa tarde" if hour < 18 else "Boa noite")
         name = self.app.current_user.get("display_name", "Estudante")
-        greeting_template = t.get("greeting", "👋 {saudacao}, {nome}!")
-        greeting_text = greeting_template.format(saudacao=greeting, nome=name)
+        template = t.get("greeting", "👋 {saudacao}, {nome}!")
+        return template.format(saudacao=greeting, nome=name)
 
-        # ── XP / Nível ───────────────────────────────────────
-        xp_info = self.db.get_xp_info(uid)
-        streak_info = self.db.get_streak(uid)
+    def _build_xp_card(self, t, uid):
+        xp_info = self.db.get_xp_info(
+            uid) or {"xp": 0, "level": 1, "progress": 0.0, "xp_next_level": 120}
+        streak_info = self.db.get_streak(uid) or {"streak": 0, "longest": 0}
         level_prefix = t.get("level_prefix", "Nível")
         xp_name = t.get("xp_name", "XP")
         streak_msg = t.get("streak_msg", "🔥 {dias} dias seguidos!").format(
-            dias=streak_info["streak"])
+            dias=streak_info.get("streak", 0))
 
-        xp_card = ft.Container(
+        return ft.Container(
             bgcolor=t["card"], border_radius=14, padding=20,
             content=ft.Column([
                 ft.Row([
-                    ft.Text(f"⭐ {level_prefix} {xp_info['level']}",
+                    ft.Text(f"⭐ {level_prefix} {xp_info.get('level', 1)}",
                             size=20, weight=ft.FontWeight.BOLD, color=t["accent"]),
                     ft.Text(streak_msg, size=14, weight=ft.FontWeight.BOLD,
-                            color=t["danger"] if streak_info["streak"] >= 7 else t["warning"]),
+                            color=t["danger"] if streak_info.get("streak", 0) >= 7 else t["warning"]),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.ProgressBar(
-                    value=xp_info["progress"], height=12,
+                    value=xp_info.get("progress", 0.0), height=12,
                     color=t["accent"], bgcolor=t["secondary"],
                     border_radius=6,
                 ),
                 ft.Text(
-                    f"{xp_info['xp']} / {xp_info['xp_next_level']} {xp_name}  •  Recorde: {streak_info['longest']} dias",
+                    f"{xp_info.get('xp', 0)} / {xp_info.get('xp_next_level', 120)} {xp_name}  •  Recorde: {streak_info.get('longest', 0)} dias",
                     size=11, color=t["text_sec"],
                 ),
             ], spacing=8),
         )
 
-        # ── Metas do Dia ─────────────────────────────────────
+    def _build_goals(self, t, uid, today_stats):
         goals_summary = self.db.get_daily_goals_summary(uid)
         goals = goals_summary["goals"]
-        today_stats = self.db.get_today_stats(uid)
 
         goal_configs = {
             "pomodoro": ("🍅", "Pomodoros", today_stats["pomodoros"]),
@@ -110,7 +159,9 @@ class DashboardView:
                         weight=ft.FontWeight.BOLD, color=t["success"])
             )
 
-        # ── Estatísticas de Hoje ─────────────────────────────
+        return goal_cards, celebration_row
+
+    def _build_stats(self, t, today_stats):
         stat_items = [
             ("🍅", "Pomodoros", str(today_stats["pomodoros"])),
             ("⏱️", "Min. Foco", str(today_stats["focus_min"])),
@@ -132,15 +183,16 @@ class DashboardView:
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
                 )
             )
+        return stat_cards
 
-        # ── Conquistas Recentes ──────────────────────────────
+    def _build_achievements(self, t, uid):
         new_achs = self.db.check_and_grant_achievements(uid)
         earned = self.db.get_user_achievements(uid)
         all_achs = self.db.get_all_achievements()
         earned_keys = {a["key"] for a in earned}
 
         ach_badges = []
-        for ach in all_achs[:12]:  # Mostrar até 12
+        for ach in all_achs[:12]:
             is_earned = ach["key"] in earned_keys
             ach_badges.append(
                 ft.Container(
@@ -175,7 +227,9 @@ class DashboardView:
                 )
             )
 
-        # ── Atividade Semanal ────────────────────────────────
+        return new_ach_cards, ach_badges, earned, all_achs
+
+    def _build_weekly_activity(self, t, uid):
         sessions = self.db.get_sessions(uid, limit=200)
         today_date = datetime.now().date()
         day_names = ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
@@ -212,8 +266,9 @@ class DashboardView:
                             color=t["success"] if is_today else t["text_sec"]),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2)
             )
+        return week_bars
 
-        # ── Ações Rápidas ────────────────────────────────────
+    def _build_quick_actions(self, t):
         actions = [
             ("🍅 Pomodoro", "pomodoro"),
             ("📝 Quiz", "study"),
@@ -231,52 +286,7 @@ class DashboardView:
                     on_click=lambda _, f=target: self.app.show_view(f),
                 )
             )
-
-        # ── Layout completo ──────────────────────────────────
-        return ft.Container(
-            expand=True, bgcolor=t["bg"],
-            content=ft.Column(
-                controls=[
-                    # Saudação
-                    ft.Text(greeting_text, size=20,
-                            weight=ft.FontWeight.BOLD, color=t["text"]),
-                    ft.Text(datetime.now().strftime("%A, %d de %B de %Y").capitalize(),
-                            size=12, color=t["text_sec"]),
-                    # XP
-                    xp_card,
-                    # Metas
-                    ft.Text("🎯 Metas de Hoje", size=18,
-                            weight=ft.FontWeight.BOLD, color=t["primary"]),
-                    *goal_cards,
-                    *celebration_row,
-                    # Stats
-                    ft.Text("📊 Resumo de Hoje", size=18,
-                            weight=ft.FontWeight.BOLD, color=t["primary"]),
-                    ft.Row(stat_cards, spacing=6),
-                    # Conquistas
-                    *new_ach_cards,
-                    ft.Text(f"🏆 Conquistas ({len(earned)}/{len(all_achs)})",
-                            size=18, weight=ft.FontWeight.BOLD, color=t["primary"]),
-                    ft.Row(ach_badges, wrap=True, spacing=6, run_spacing=6),
-                    # Atividade semanal
-                    ft.Text("📈 Atividade Semanal", size=18,
-                            weight=ft.FontWeight.BOLD, color=t["primary"]),
-                    ft.Container(
-                        bgcolor=t["card"], border_radius=12, padding=15,
-                        content=ft.Row(
-                            week_bars, alignment=ft.MainAxisAlignment.SPACE_AROUND),
-                    ),
-                    # Ações rápidas
-                    ft.Text("⚡ Ações Rápidas", size=18,
-                            weight=ft.FontWeight.BOLD, color=t["primary"]),
-                    ft.Row(action_btns, spacing=6),
-                    ft.Container(height=10),
-                ],
-                spacing=10,
-                scroll=ft.ScrollMode.AUTO,
-            ),
-            padding=ft.padding.symmetric(horizontal=20, vertical=10),
-        )
+        return action_btns
 
     def _build_guest(self, t):
         welcome_msg = t.get("welcome", "👋 Bem-vindo ao Switch Focus!")

@@ -1,8 +1,11 @@
 import flet as ft
 from datetime import datetime
+import logging
 import platform
 import threading
 import asyncio
+
+logger = logging.getLogger("PomodoroView")
 
 # Guard: winsound só existe no Windows
 if platform.system() == "Windows":
@@ -170,6 +173,7 @@ class PomodoroView:
             try:
                 self.app.page.update()
             except Exception:
+                logger.debug("page.update() falhou no tick_loop, encerrando")
                 break
 
         if self._seconds_left <= 0 and self._running:
@@ -208,7 +212,7 @@ class PomodoroView:
             if winsound:
                 winsound.Beep(800, 600)
             else:
-                print("\a")
+                logger.debug("Beep sonoro não disponível (sem winsound)")
         threading.Thread(target=_beep, daemon=True).start()
 
         # Auto-switch
@@ -225,7 +229,7 @@ class PomodoroView:
         try:
             self.app.page.update()
         except Exception:
-            pass
+            logger.debug("page.update() falhou em _session_complete")
 
     def _set_type(self, stype, e=None):
         self._running = False
@@ -253,7 +257,7 @@ class PomodoroView:
         try:
             self.app.page.update()
         except Exception:
-            pass
+            logger.debug("page.update() falhou em _set_type")
 
     def _skip_break(self, e=None):
         if self._session_type in ("pausa_curta", "pausa_longa"):

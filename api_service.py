@@ -243,6 +243,8 @@ class APIService:
                 })
             return questions
         except Exception:
+            logger.warning("Erro ao buscar trivia (categoria=%s)",
+                           category_name, exc_info=True)
             return []
 
     # ── busca de vídeos no YouTube ───────────────────────────
@@ -273,6 +275,8 @@ class APIService:
                 videos.append(video)
             return videos
         except Exception:
+            logger.warning(
+                "Erro ao buscar vídeos YouTube (query=%s)", query, exc_info=True)
             return []
 
     @staticmethod
@@ -284,11 +288,13 @@ class APIService:
     # ── WIKIPEDIA (Teoria) ───────────────────────────────────
     # ══════════════════════════════════════════════════════════
     @staticmethod
-    def fetch_wiki_summary(query: str) -> dict | None:
+    def fetch_wiki_summary(query: str, _depth: int = 0) -> dict | None:
         """
         Busca resumo de um tópico na Wikipedia em português.
         Retorna dict com: title, extract, thumbnail, url — ou None.
         """
+        if _depth >= 2:
+            return None
         try:
             url = "https://pt.wikipedia.org/api/rest_v1/page/summary/" + \
                   requests.utils.quote(query)
@@ -316,7 +322,7 @@ class APIService:
                 if sr.status_code == 200:
                     results = sr.json().get("query", {}).get("search", [])
                     if results:
-                        return APIService.fetch_wiki_summary(results[0]["title"])
+                        return APIService.fetch_wiki_summary(results[0]["title"], _depth + 1)
             return None
         except Exception as e:
             logger.warning(f"Wikipedia fetch error: {e}")

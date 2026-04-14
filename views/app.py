@@ -1,8 +1,11 @@
 import flet as ft
+import logging
 import threading
 from database import DatabaseManager
 from themes import ThemeManager, THEMES
 from content_updater import ContentUpdater
+
+logger = logging.getLogger("App")
 
 
 class SwitchFocusApp:
@@ -118,13 +121,13 @@ class SwitchFocusApp:
         self._app_bar.actions = []
         uid = self.get_user_id()
         if uid:
-            xp_info = self.db.get_xp_info(uid)
-            streak = self.db.get_streak(uid)
+            xp_info = self.db.get_xp_info(uid) or {}
+            streak = self.db.get_streak(uid) or {}
             lp = t.get("level_prefix", "Nv.")
             self._app_bar.actions.append(
                 ft.Container(
                     content=ft.Text(
-                        f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                        f"⭐{lp}{xp_info.get('level', 1)} 🔥{streak.get('streak', 0)}d",
                         size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
                     ),
                     margin=ft.margin.only(right=15),
@@ -157,47 +160,36 @@ class SwitchFocusApp:
                 return
 
             if hasattr(view, "on_show"):
-                view.on_show()
+                try:
+                    view.on_show()
+                except Exception:
+                    logger.exception("Erro em %s.on_show()", name)
             content = view.build()
 
         self._content.content = content
         self.page.update()
 
+    # ── registry de views (lazy imports) ───────────────────
+    _VIEW_REGISTRY = {
+        "dashboard": lambda: __import__("views.dashboard_view", fromlist=["DashboardView"]).DashboardView,
+        "pomodoro": lambda: __import__("views.pomodoro_view", fromlist=["PomodoroView"]).PomodoroView,
+        "tasks": lambda: __import__("views.tasks_view", fromlist=["TasksView"]).TasksView,
+        "study": lambda: __import__("views.study_view", fromlist=["StudyView"]).StudyView,
+        "flashcards": lambda: __import__("views.flashcards_view", fromlist=["FlashcardsView"]).FlashcardsView,
+        "shorts": lambda: __import__("views.shorts_view", fromlist=["ShortsView"]).ShortsView,
+        "history": lambda: __import__("views.history_view", fromlist=["HistoryView"]).HistoryView,
+        "settings": lambda: __import__("views.settings_view", fromlist=["SettingsView"]).SettingsView,
+        "theory": lambda: __import__("views.theory_view", fromlist=["TheoryView"]).TheoryView,
+        "enem_editais": lambda: __import__("views.enem_editais_view", fromlist=["EnemEditaisView"]).EnemEditaisView,
+        "login": lambda: __import__("views.login_view", fromlist=["LoginView"]).LoginView,
+    }
+
     def _create_view(self, name):
-        if name == "dashboard":
-            from views.dashboard_view import DashboardView
-            return DashboardView(self)
-        elif name == "pomodoro":
-            from views.pomodoro_view import PomodoroView
-            return PomodoroView(self)
-        elif name == "tasks":
-            from views.tasks_view import TasksView
-            return TasksView(self)
-        elif name == "study":
-            from views.study_view import StudyView
-            return StudyView(self)
-        elif name == "flashcards":
-            from views.flashcards_view import FlashcardsView
-            return FlashcardsView(self)
-        elif name == "shorts":
-            from views.shorts_view import ShortsView
-            return ShortsView(self)
-        elif name == "history":
-            from views.history_view import HistoryView
-            return HistoryView(self)
-        elif name == "settings":
-            from views.settings_view import SettingsView
-            return SettingsView(self)
-        elif name == "theory":
-            from views.theory_view import TheoryView
-            return TheoryView(self)
-        elif name == "enem_editais":
-            from views.enem_editais_view import EnemEditaisView
-            return EnemEditaisView(self)
-        elif name == "login":
-            from views.login_view import LoginView
-            return LoginView(self)
-        return None
+        loader = self._VIEW_REGISTRY.get(name)
+        if loader is None:
+            return None
+        cls = loader()
+        return cls(self)
 
     # ── menu "Mais" ──────────────────────────────────────────
     def _build_more_menu(self):
@@ -293,13 +285,13 @@ class SwitchFocusApp:
             uid = self.get_user_id()
             if uid:
                 t = self.theme_mgr.get_theme()
-                xp_info = self.db.get_xp_info(uid)
-                streak = self.db.get_streak(uid)
+                xp_info = self.db.get_xp_info(uid) or {}
+                streak = self.db.get_streak(uid) or {}
                 lp = t.get("level_prefix", "Nv.")
                 self._app_bar.actions = [
                     ft.Container(
                         content=ft.Text(
-                            f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                            f"⭐{lp}{xp_info.get('level', 1)} 🔥{streak.get('streak', 0)}d",
                             size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
                         ),
                         margin=ft.margin.only(right=15),
@@ -375,4 +367,5 @@ class SwitchFocusApp:
         try:
             self.updater.start_update()
         except Exception:
-            pass
+            logger.warning(
+                "Falha no auto-update de conteúdo", exc_info=True)

@@ -1,9 +1,12 @@
 import flet as ft
 import asyncio
+import logging
 import threading
 import urllib.parse
 import requests
 from enem_syllabus import ENEM_SYLLABUS
+
+logger = logging.getLogger("TheoryView")
 
 # ── Wikipedia API helper ─────────────────────────────────────
 _WIKI_HEADERS = {"User-Agent": "SwitchFocusApp/1.0 (estudos ENEM)"}
@@ -46,7 +49,7 @@ def _wiki_search(query: str, limit: int = 6) -> list[dict]:
                 "url": urls[i] if i < len(urls) else "",
             })
     except Exception:
-        pass
+        logger.debug("Erro na busca Wikipedia para '%s'", query, exc_info=True)
     return results
 
 
@@ -67,7 +70,8 @@ def _wiki_article(title: str) -> dict | None:
                     "url": f"https://pt.wikipedia.org/wiki/{urllib.parse.quote(page['title'])}",
                 }
     except Exception:
-        pass
+        logger.debug("Erro ao buscar artigo Wikipedia '%s'",
+                     title, exc_info=True)
     return None
 
 

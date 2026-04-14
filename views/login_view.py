@@ -113,9 +113,9 @@ class LoginView:
             self.app.show_snackbar("⚠️ Preencha todos os campos.")
             return
 
-        if self._mode == "register" and len(password) < 4:
+        if self._mode == "register" and len(password) < 8:
             self.app.show_snackbar(
-                "⚠️ A senha deve ter pelo menos 4 caracteres.")
+                "⚠️ A senha deve ter pelo menos 8 caracteres.")
             return
 
         if self._mode == "login":
