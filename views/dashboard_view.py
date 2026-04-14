@@ -31,29 +31,30 @@ class DashboardView:
         greeting_text = greeting_template.format(saudacao=greeting, nome=name)
 
         # ── XP / Nível ───────────────────────────────────────
-        xp_info = self.db.get_xp_info(uid)
-        streak_info = self.db.get_streak(uid)
+        xp_info = self.db.get_xp_info(
+            uid) or {"xp": 0, "level": 1, "progress": 0.0, "xp_next_level": 120}
+        streak_info = self.db.get_streak(uid) or {"streak": 0, "longest": 0}
         level_prefix = t.get("level_prefix", "Nível")
         xp_name = t.get("xp_name", "XP")
         streak_msg = t.get("streak_msg", "🔥 {dias} dias seguidos!").format(
-            dias=streak_info["streak"])
+            dias=streak_info.get("streak", 0))
 
         xp_card = ft.Container(
             bgcolor=t["card"], border_radius=14, padding=20,
             content=ft.Column([
                 ft.Row([
-                    ft.Text(f"⭐ {level_prefix} {xp_info['level']}",
+                    ft.Text(f"⭐ {level_prefix} {xp_info.get('level', 1)}",
                             size=20, weight=ft.FontWeight.BOLD, color=t["accent"]),
                     ft.Text(streak_msg, size=14, weight=ft.FontWeight.BOLD,
-                            color=t["danger"] if streak_info["streak"] >= 7 else t["warning"]),
+                            color=t["danger"] if streak_info.get("streak", 0) >= 7 else t["warning"]),
                 ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
                 ft.ProgressBar(
-                    value=xp_info["progress"], height=12,
+                    value=xp_info.get("progress", 0.0), height=12,
                     color=t["accent"], bgcolor=t["secondary"],
                     border_radius=6,
                 ),
                 ft.Text(
-                    f"{xp_info['xp']} / {xp_info['xp_next_level']} {xp_name}  •  Recorde: {streak_info['longest']} dias",
+                    f"{xp_info.get('xp', 0)} / {xp_info.get('xp_next_level', 120)} {xp_name}  •  Recorde: {streak_info.get('longest', 0)} dias",
                     size=11, color=t["text_sec"],
                 ),
             ], spacing=8),

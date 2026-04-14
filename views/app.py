@@ -118,13 +118,13 @@ class SwitchFocusApp:
         self._app_bar.actions = []
         uid = self.get_user_id()
         if uid:
-            xp_info = self.db.get_xp_info(uid)
-            streak = self.db.get_streak(uid)
+            xp_info = self.db.get_xp_info(uid) or {}
+            streak = self.db.get_streak(uid) or {}
             lp = t.get("level_prefix", "Nv.")
             self._app_bar.actions.append(
                 ft.Container(
                     content=ft.Text(
-                        f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                        f"⭐{lp}{xp_info.get('level', 1)} 🔥{streak.get('streak', 0)}d",
                         size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
                     ),
                     margin=ft.margin.only(right=15),
@@ -157,7 +157,11 @@ class SwitchFocusApp:
                 return
 
             if hasattr(view, "on_show"):
-                view.on_show()
+                try:
+                    view.on_show()
+                except Exception:
+                    import traceback
+                    traceback.print_exc()
             content = view.build()
 
         self._content.content = content
@@ -293,13 +297,13 @@ class SwitchFocusApp:
             uid = self.get_user_id()
             if uid:
                 t = self.theme_mgr.get_theme()
-                xp_info = self.db.get_xp_info(uid)
-                streak = self.db.get_streak(uid)
+                xp_info = self.db.get_xp_info(uid) or {}
+                streak = self.db.get_streak(uid) or {}
                 lp = t.get("level_prefix", "Nv.")
                 self._app_bar.actions = [
                     ft.Container(
                         content=ft.Text(
-                            f"⭐{lp}{xp_info['level']} 🔥{streak['streak']}d",
+                            f"⭐{lp}{xp_info.get('level', 1)} 🔥{streak.get('streak', 0)}d",
                             size=12, color=t["accent"], weight=ft.FontWeight.BOLD,
                         ),
                         margin=ft.margin.only(right=15),
@@ -375,4 +379,6 @@ class SwitchFocusApp:
         try:
             self.updater.start_update()
         except Exception:
-            pass
+            import logging
+            logging.getLogger("App").warning(
+                "Falha no auto-update de conteúdo", exc_info=True)
