@@ -146,7 +146,8 @@ class ShortsView:
             self._playing_url = url
             self.app.show_view("shorts")
         else:
-            self.app.page.launch_url(url)
+            import webbrowser
+            webbrowser.open(url)
 
     def _close_player(self, e=None):
         self._playing_url = None
@@ -174,7 +175,7 @@ class ShortsView:
                         icon=ft.Icons.OPEN_IN_BROWSER,
                         icon_color=t["text_sec"],
                         tooltip="Abrir no navegador",
-                        on_click=lambda _: self.app.page.launch_url(
+                        on_click=lambda _: __import__('webbrowser').open(
                             self._playing_url),
                     ),
                 ]),
