@@ -16,6 +16,7 @@ class StudyView:
         self._total = 0
         self._category = "enem"
         self._subject = None
+        self._enem_year = None
         self._last_chosen = None
         self._last_is_correct = False
 
@@ -29,6 +30,8 @@ class StudyView:
             return self._build_feedback()
         elif self._mode == "results":
             return self._build_results()
+        elif self._mode == "enem_select":
+            return self._build_enem_select()
         return self._build_menu()
 
     def _build_menu(self):
@@ -53,8 +56,8 @@ class StudyView:
         subjects = self.db.get_subjects(self._category, "quiz")
         subject_tiles = []
         for subj in subjects:
-            topics = self.db.get_topics(self._category, subj, "quiz")
-            topic_count = len(topics) if topics else 0
+            q_count = len(self.db.get_questions(
+                self._category, subj, limit=500))
             subject_tiles.append(
                 ft.Container(
                     bgcolor=t["card"], border_radius=12,
@@ -64,7 +67,7 @@ class StudyView:
                         ft.Column([
                             ft.Text(
                                 f"📖 {subj}", size=15, weight=ft.FontWeight.BOLD, color=t["text"]),
-                            ft.Text(f"{topic_count} tópicos",
+                            ft.Text(f"{q_count} questões",
                                     size=12, color=t["text_sec"]),
                         ], spacing=2, expand=True),
                         ft.Icon(ft.Icons.PLAY_CIRCLE_FILLED,
@@ -87,7 +90,7 @@ class StudyView:
                     enem_section.append(
                         ft.Container(
                             bgcolor=t["card"], border_radius=12, padding=15,
-                            on_click=lambda _, y=year: self._start_enem_quiz(
+                            on_click=lambda _, y=year: self._show_enem_select(
                                 y),
                             content=ft.Row([
                                 ft.Column([
@@ -161,7 +164,7 @@ class StudyView:
     def _start_quiz(self, subject, e=None):
         self._subject = subject
         self._questions = self.db.get_questions(
-            self._category, subject, limit=10)
+            self._category, subject, limit=500)
         if not self._questions:
             self.app.show_snackbar(
                 "⚠️ Nenhuma questão disponível para essa matéria.")
@@ -172,9 +175,89 @@ class StudyView:
         self._mode = "quiz"
         self.app.show_view("study")
 
-    def _start_enem_quiz(self, year, e=None):
+    # ── ENEM Real — seleção de disciplina ────────────────────
+    def _show_enem_select(self, year, e=None):
+        self._enem_year = year
+        self._mode = "enem_select"
+        self.app.show_view("study")
+
+    def _build_enem_select(self):
+        t = self.app.theme_mgr.get_theme()
+        year = self._enem_year
+        disciplines = self.db.get_enem_disciplines_for_year(year)
+        total_count = self.db.get_cached_enem_year_count(year)
+
+        tiles = []
+        # Opção: prova completa
+        tiles.append(
+            ft.Container(
+                bgcolor=t["primary"], border_radius=12, padding=15,
+                on_click=lambda _: self._start_enem_quiz(year),
+                ink=True,
+                content=ft.Row([
+                    ft.Icon(ft.Icons.SCHOOL, color="#FFFFFF", size=28),
+                    ft.Column([
+                        ft.Text("📝 Prova Completa", size=15,
+                                weight=ft.FontWeight.BOLD, color="#FFFFFF"),
+                        ft.Text(f"{total_count} questões",
+                                size=12, color="#FFFFFFCC"),
+                    ], spacing=2, expand=True),
+                    ft.Icon(ft.Icons.ARROW_FORWARD_IOS,
+                            color="#FFFFFF", size=16),
+                ], spacing=10),
+            )
+        )
+
+        # Opção: por disciplina
+        for disc in disciplines:
+            name = disc["discipline_name"] or disc["discipline"]
+            count = disc["count"]
+            tiles.append(
+                ft.Container(
+                    bgcolor=t["card"], border_radius=12, padding=15,
+                    on_click=lambda _, d=disc["discipline"]: self._start_enem_quiz(
+                        year, discipline=d),
+                    ink=True,
+                    content=ft.Row([
+                        ft.Icon(ft.Icons.QUIZ, color=t["accent"], size=24),
+                        ft.Column([
+                            ft.Text(f"📖 {name}", size=14,
+                                    weight=ft.FontWeight.BOLD, color=t["text"]),
+                            ft.Text(f"{count} questões", size=12,
+                                    color=t["text_sec"]),
+                        ], spacing=2, expand=True),
+                        ft.Icon(ft.Icons.ARROW_FORWARD_IOS,
+                                color=t["text_sec"], size=16),
+                    ], spacing=10),
+                )
+            )
+
+        return ft.Container(
+            expand=True, bgcolor=t["bg"],
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            content=ft.Column([
+                ft.Row([
+                    ft.TextButton("← Voltar",
+                                  on_click=lambda _: self._back_to_menu(),
+                                  style=ft.ButtonStyle(color=t["text_sec"])),
+                ]),
+                ft.Text(f"🎯 ENEM {year}", size=22,
+                        weight=ft.FontWeight.BOLD, color=t["primary"]),
+                ft.Text("Escolha a prova completa ou uma área de conhecimento:",
+                        size=13, color=t["text_sec"]),
+                ft.Container(height=5),
+                *tiles,
+            ], spacing=10, scroll=ft.ScrollMode.AUTO),
+        )
+
+    def _start_enem_quiz(self, year, discipline=None, e=None):
+        self._enem_year = year
         self._subject = f"ENEM {year}"
-        questions_raw = self.db.get_enem_questions(year, limit=10)
+        questions_raw = self.db.get_enem_questions(
+            year, discipline=discipline, limit=500)
+        if discipline and questions_raw:
+            disc_name = questions_raw[0].get("discipline_name", discipline)
+            self._subject += f" — {disc_name}"
         if not questions_raw:
             self.app.show_snackbar(
                 "⚠️ Nenhuma questão em cache para esse ano.")
